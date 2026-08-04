@@ -14,6 +14,11 @@
         img { max-width: 100%; border-radius: 8px; margin-top: 15px; display: block; margin-left: auto; margin-right: auto; }
         #fileInfo { margin-top: 15px; font-weight: bold; color: #333; word-break: break-all; }
         input[type="file"] { display: none; }
+        
+        /* Style de la barre de progression */
+        .progress-container { width: 100%; background-color: #e0e0e0; border-radius: 8px; overflow: hidden; margin: 15px 0; display: none; }
+        .progress-bar { width: 0%; height: 20px; background-color: #28a745; transition: width 0.2s ease; }
+        #progressText { font-size: 13px; font-weight: bold; color: #333; margin-top: 5px; display: none; }
     </style>
 </head>
 <body>
@@ -21,6 +26,12 @@
 <div class="card">
     <h2>Partage Fichier Universal</h2>
     <div id="status">Chargement...</div>
+
+    <!-- Barre de progression -->
+    <div id="progressContainer" class="progress-container">
+        <div id="progressBar" class="progress-bar"></div>
+    </div>
+    <div id="progressText">0%</div>
 
     <!-- Section Émetteur -->
     <div id="senderSection" style="display:none;">
@@ -55,7 +66,24 @@
     const downloadBtn = document.getElementById('downloadBtn');
     const fileInfo = document.getElementById('fileInfo');
 
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
+
+    function showProgress(percent) {
+        progressContainer.style.display = 'block';
+        progressText.style.display = 'block';
+        progressBar.style.width = percent + '%';
+        progressText.innerText = Math.round(percent) + '%';
+    }
+
+    function hideProgress() {
+        progressContainer.style.display = 'none';
+        progressText.style.display = 'none';
+        progressBar.style.width = '0%';
+    }
 
     function processFile(file, callback) {
         if (file.type.startsWith('image/')) {
@@ -92,7 +120,6 @@
 
         const rawUrl = decodeURIComponent(fileUrlParam);
 
-        // Si c'est une image, on affiche un aperçu
         if (fileNameParam.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
             previewImage.src = rawUrl;
             previewImage.style.display = 'block';
@@ -102,9 +129,24 @@
 
         downloadBtn.addEventListener('click', () => {
             statusDiv.innerText = "Téléchargement en cours...";
-            fetch(rawUrl)
-                .then(response => response.blob())
-                .then(blob => {
+            downloadBtn.style.display = 'none';
+            showProgress(0);
+
+            // Utilisation d'XMLHttpRequest pour calculer la progression réelle du téléchargement
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', rawUrl, true);
+            xhr.responseType = 'blob';
+
+            xhr.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    showProgress(percentComplete);
+                }
+            };
+
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    const blob = xhr.response;
                     const blobUrl = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = blobUrl;
@@ -113,12 +155,26 @@
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(blobUrl);
+
+                    hideProgress();
                     statusDiv.innerText = "Téléchargement terminé !";
-                })
-                .catch(() => {
+                    downloadBtn.style.display = 'inline-block';
+                } else {
+                    hideProgress();
                     window.open(rawUrl, '_blank');
-                    statusDiv.innerText = "Erreur de téléchargement direct. Ouverture dans un nouvel onglet...";
-                });
+                    statusDiv.innerText = "Erreur. Ouverture dans un nouvel onglet...";
+                    downloadBtn.style.display = 'inline-block';
+                }
+            };
+
+            xhr.onerror = () => {
+                hideProgress();
+                window.open(rawUrl, '_blank');
+                statusDiv.innerText = "Erreur réseau. Ouverture directe...";
+                downloadBtn.style.display = 'inline-block';
+            };
+
+            xhr.send();
         });
 
     } else {
@@ -132,33 +188,50 @@
                 statusDiv.innerText = "Préparation du fichier...";
 
                 processFile(file, (processedBlob, fileName) => {
-                    statusDiv.innerText = "Envoi du fichier...";
+                    statusDiv.innerText = "Envoi du fichier en cours...";
+                    showProgress(0);
 
                     const formData = new FormData();
                     formData.append('reqtype', 'fileupload');
                     formData.append('time', '1h');
                     formData.append('fileToUpload', processedBlob, fileName);
 
-                    fetch('https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.text())
-                    .then(fileUrl => {
-                        if (fileUrl && fileUrl.startsWith('http')) {
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl.trim())}&name=${encodeURIComponent(fileName)}`;
-                            
-                            qr.value = shareableUrl;
-                            qrcodeCanvas.style.display = 'inline-block';
-                            qrHelp.style.display = 'block';
-                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
-                        } else {
-                            statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', 'https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), true);
+
+                    // Progression de l'envoi
+                    xhr.upload.onprogress = (event) => {
+                        if (event.lengthComputable) {
+                            const percentComplete = (event.loaded / event.total) * 100;
+                            showProgress(percentComplete);
                         }
-                    })
-                    .catch(() => {
+                    };
+
+                    xhr.onload = () => {
+                        hideProgress();
+                        if (xhr.status === 200) {
+                            const fileUrl = xhr.responseText.trim();
+                            if (fileUrl && fileUrl.startsWith('http')) {
+                                const shareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}`;
+                                
+                                qr.value = shareableUrl;
+                                qrcodeCanvas.style.display = 'inline-block';
+                                qrHelp.style.display = 'block';
+                                statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
+                            } else {
+                                statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
+                            }
+                        } else {
+                            statusDiv.innerText = "Erreur lors du transfert.";
+                        }
+                    };
+
+                    xhr.onerror = () => {
+                        hideProgress();
                         statusDiv.innerText = "Erreur de connexion.";
-                    });
+                    };
+
+                    xhr.send(formData);
                 });
             }
         });
