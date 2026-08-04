@@ -27,15 +27,13 @@
         <label for="photoInput" class="btn">Sélectionner une photo</label>
         <input type="file" id="photoInput" accept="image/*">
         <br>
-        <button id="sendBtn" class="btn btn-success" style="display:none;">Envoyer la photo</button>
-        <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
         <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
     </div>
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
-        <p id="recvHelp">En attente de l'envoi depuis l'émetteur...</p>
+        <p id="recvHelp">En attente de la photo...</p>
         <img id="receivedImage" alt="" style="display:none;">
         <br>
         <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
@@ -50,7 +48,6 @@
     const senderSection = document.getElementById('senderSection');
     const receiverSection = document.getElementById('receiverSection');
     const photoInput = document.getElementById('photoInput');
-    const sendBtn = document.getElementById('sendBtn');
     const qrcodeCanvas = document.getElementById('qrcode');
     const qrHelp = document.getElementById('qrHelp');
     const receivedImage = document.getElementById('receivedImage');
@@ -94,6 +91,14 @@
         };
     }
 
+    function trySendData() {
+        if (currentConnection && currentConnection.open && selectedImageData) {
+            statusDiv.innerText = "Envoi de la photo en cours...";
+            currentConnection.send(selectedImageData);
+            statusDiv.innerText = "Photo envoyée !";
+        }
+    }
+
     peer.on('open', (id) => {
         if (targetPeerId) {
             // MODE RÉCEPTEUR
@@ -125,12 +130,16 @@
             peer.on('connection', (conn) => {
                 currentConnection = conn;
                 
-                conn.on('open', () => {
-                    statusDiv.innerText = "Appareil récepteur connecté et prêt !";
-                    if (selectedImageData) {
-                        sendBtn.style.display = 'inline-block';
-                    }
-                });
+                const handleOpen = () => {
+                    statusDiv.innerText = "Appareil récepteur connecté !";
+                    trySendData();
+                };
+
+                if (conn.open) {
+                    handleOpen();
+                } else {
+                    conn.on('open', handleOpen);
+                }
             });
         }
     });
@@ -146,20 +155,11 @@
                 qrHelp.style.display = 'block';
 
                 if (currentConnection && currentConnection.open) {
-                    sendBtn.style.display = 'inline-block';
-                    statusDiv.innerText = "Appareil connecté ! Clique sur 'Envoyer la photo'.";
+                    trySendData();
                 } else {
-                    statusDiv.innerText = "Scanne le QR code pour connecter le récepteur.";
+                    statusDiv.innerText = "Scanne le QR code avec le téléphone récepteur.";
                 }
             });
-        }
-    });
-
-    sendBtn.addEventListener('click', () => {
-        if (currentConnection && selectedImageData) {
-            statusDiv.innerText = "Envoi en cours...";
-            currentConnection.send(selectedImageData);
-            statusDiv.innerText = "Photo envoyée !";
         }
     });
 </script>
