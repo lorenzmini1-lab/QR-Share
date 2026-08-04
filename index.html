@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo QR Instantané</title>
+    <title>Partage Photo QR</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -18,27 +18,31 @@
 <body>
 
 <div class="card">
-    <h2>Partage Instantané QR</h2>
-    <div id="status">Sélectionne une photo à partager.</div>
+    <h2>Partage Photo QR</h2>
+    <div id="status">Chargement...</div>
 
     <!-- Section Émetteur -->
-    <div id="senderSection">
+    <div id="senderSection" style="display:none;">
         <label for="photoInput" class="btn">Sélectionner une photo</label>
         <input type="file" id="photoInput" accept="image/*">
         <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
-        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone pour afficher l'image.</p>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code léger avec l'autre téléphone.</p>
     </div>
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
+        <p>Récupération de la photo...</p>
         <img id="receivedImage" alt="" style="display:none;">
         <br>
-        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo.jpg">Télécharger la photo</a>
+        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
     </div>
 </div>
 
 <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const imgId = urlParams.get('id');
+
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
     const receiverSection = document.getElementById('receiverSection');
@@ -48,58 +52,62 @@
     const receivedImage = document.getElementById('receivedImage');
     const downloadBtn = document.getElementById('downloadBtn');
 
-    const qr = new QRious({ element: qrcodeCanvas, size: 280, level: 'L' });
+    const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
 
-    // Vérification du fragment URL (#) pour la récupération d'image
-    const hashData = window.location.hash.substring(1);
-
-    if (hashData) {
+    if (imgId) {
+        // MODE RÉCEPTEUR : Récupère l'image depuis le relais ntfy.sh
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Photo reçue !";
+        statusDiv.innerText = "Téléchargement de l'image en cours...";
 
-        const fullBase64 = "data:image/jpeg;base64," + hashData;
-        receivedImage.src = fullBase64;
-        receivedImage.style.display = 'inline-block';
-        downloadBtn.href = fullBase64;
-        downloadBtn.style.display = 'inline-block';
+        fetch(`https://ntfy.sh/${imgId}/raw`)
+            .then(res => res.blob())
+            .then(blob => {
+                const imgUrl = URL.createObjectURL(blob);
+                receivedImage.src = imgUrl;
+                receivedImage.style.display = 'inline-block';
+                downloadBtn.href = imgUrl;
+                downloadBtn.style.display = 'inline-block';
+                statusDiv.innerText = "Photo reçue avec succès !";
+            })
+            .catch(() => {
+                statusDiv.innerText = "Erreur lors du téléchargement de la photo.";
+            });
+
+    } else {
+        // MODE ÉMETTEUR
+        statusDiv.innerText = "Sélectionne une photo à partager.";
+        senderSection.style.display = 'block';
+
+        photoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                statusDiv.innerText = "Préparation de l'envoi...";
+                
+                // Générer un ID unique de canal
+                const channelId = 'photo_' + Math.random().toString(36).substring(2, 11);
+
+                fetch(`https://ntfy.sh/${channelId}`, {
+                    method: 'PUT',
+                    body: file
+                })
+                .then(res => {
+                    if (res.ok) {
+                        const shareableUrl = `${window.location.origin}${window.location.pathname}?id=${channelId}`;
+                        qr.value = shareableUrl;
+                        qrcodeCanvas.style.display = 'inline-block';
+                        qrHelp.style.display = 'block';
+                        statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
+                    } else {
+                        statusDiv.innerText = "Erreur d'envoi du fichier.";
+                    }
+                })
+                .catch(() => {
+                    statusDiv.innerText = "Erreur de réseau.";
+                });
+            }
+        });
     }
-
-    photoInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            statusDiv.innerText = "Génération du QR Code...";
-
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    // Vignette très compressée pour s'insérer directement dans le QR code
-                    let max = 120;
-                    let w = img.width, h = img.height;
-                    if (w > h) { if (w > max) { h *= max / w; w = max; } }
-                    else { if (h > max) { w *= max / h; h = max; } }
-                    
-                    canvas.width = w; canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, w, h);
-
-                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.3);
-                    const base64Data = compressedDataUrl.split(',')[1];
-
-                    const shareableUrl = `${window.location.origin}${window.location.pathname}#${base64Data}`;
-                    
-                    qr.value = shareableUrl;
-                    qrcodeCanvas.style.display = 'inline-block';
-                    qrHelp.style.display = 'block';
-                    statusDiv.innerText = "Scanne le QR code maintenant !";
-                };
-            };
-        }
-    });
 </script>
 
 </body>
