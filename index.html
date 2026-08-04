@@ -68,9 +68,9 @@
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                // Export en Base64 sans le préfixe pour ImgBB
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                callback(dataUrl.split(',')[1]);
+                canvas.toBlob((blob) => {
+                    callback(blob);
+                }, 'image/jpeg', 0.7);
             };
         };
     }
@@ -106,22 +106,21 @@
             if (file) {
                 statusDiv.innerText = "Optimisation de la photo...";
 
-                compressImage(file, (base64String) => {
+                compressImage(file, (compressedBlob) => {
                     statusDiv.innerText = "Envoi de la photo...";
 
                     const formData = new FormData();
-                    formData.append('image', base64String);
+                    formData.append('reqtype', 'fileupload');
+                    formData.append('fileToUpload', compressedBlob, 'photo.jpg');
 
-                    // Clé API publique gratuite pour le transfert
-                    fetch('https://api.imgbb.com/1/upload?key=6d207e02198a847aa98d0a2a901485a5', {
+                    fetch('https://catbox.moe/user/api.php', {
                         method: 'POST',
                         body: formData
                     })
-                    .then(res => res.json())
-                    .then(resData => {
-                        if (resData.success && resData.data.url) {
-                            const directUrl = resData.data.url;
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(directUrl)}`;
+                    .then(res => res.text())
+                    .then(imageUrl => {
+                        if (imageUrl && imageUrl.startsWith('http')) {
+                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(imageUrl.trim())}`;
                             
                             qr.value = shareableUrl;
                             qrcodeCanvas.style.display = 'inline-block';
