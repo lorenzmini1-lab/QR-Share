@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo Sécurisé</title>
+    <title>Partage Photo QR Instantané</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -18,7 +18,7 @@
 <body>
 
 <div class="card">
-    <h2>Partage Instantané</h2>
+    <h2>Partage Instantané QR</h2>
     <div id="status">Sélectionne une photo à partager.</div>
 
     <!-- Section Émetteur -->
@@ -27,66 +27,77 @@
         <input type="file" id="photoInput" accept="image/*">
         <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
-        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec n'importe quel téléphone pour télécharger la photo.</p>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone pour afficher l'image.</p>
     </div>
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
-        <p>Téléchargement de l'image...</p>
-        <a id="downloadBtn" class="btn btn-success" download="photo.jpg">Télécharger la photo</a>
+        <img id="receivedImage" alt="" style="display:none;">
+        <br>
+        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo.jpg">Télécharger la photo</a>
     </div>
 </div>
 
 <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    const downloadUrl = urlParams.get('download');
-
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
     const receiverSection = document.getElementById('receiverSection');
     const photoInput = document.getElementById('photoInput');
     const qrcodeCanvas = document.getElementById('qrcode');
     const qrHelp = document.getElementById('qrHelp');
+    const receivedImage = document.getElementById('receivedImage');
     const downloadBtn = document.getElementById('downloadBtn');
 
-    const qr = new QRious({ element: qrcodeCanvas, size: 250 });
+    const qr = new QRious({ element: qrcodeCanvas, size: 280, level: 'L' });
 
-    // Si on ouvre la page via le QR code scanned
-    if (downloadUrl) {
+    // Vérification du fragment URL (#) pour la récupération d'image
+    const hashData = window.location.hash.substring(1);
+
+    if (hashData) {
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Photo prête à être téléchargée !";
-        downloadBtn.href = decodeURIComponent(downloadUrl);
+        statusDiv.innerText = "Photo reçue !";
+
+        const fullBase64 = "data:image/jpeg;base64," + hashData;
+        receivedImage.src = fullBase64;
+        receivedImage.style.display = 'inline-block';
+        downloadBtn.href = fullBase64;
+        downloadBtn.style.display = 'inline-block';
     }
 
     photoInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
-            statusDiv.innerText = "Création du lien temporaire...";
-            
-            const formData = new FormData();
-            formData.append('file', file);
+            statusDiv.innerText = "Génération du QR Code...";
 
-            // Envoi vers l'API de transfert temporaire gratuit (file.io)
-            fetch('https://file.io', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const shareableUrl = `${window.location.origin}${window.location.pathname}?download=${encodeURIComponent(data.link)}`;
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    // Vignette très compressée pour s'insérer directement dans le QR code
+                    let max = 120;
+                    let w = img.width, h = img.height;
+                    if (w > h) { if (w > max) { h *= max / w; w = max; } }
+                    else { if (h > max) { w *= max / h; h = max; } }
+                    
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.3);
+                    const base64Data = compressedDataUrl.split(',')[1];
+
+                    const shareableUrl = `${window.location.origin}${window.location.pathname}#${base64Data}`;
+                    
                     qr.value = shareableUrl;
                     qrcodeCanvas.style.display = 'inline-block';
                     qrHelp.style.display = 'block';
-                    statusDiv.innerText = "QR Code prêt ! Scanne-le avec l'autre téléphone.";
-                } else {
-                    statusDiv.innerText = "Erreur lors de la création du lien.";
-                }
-            })
-            .catch(() => {
-                statusDiv.innerText = "Erreur de connexion au service d'envoi.";
-            });
+                    statusDiv.innerText = "Scanne le QR code maintenant !";
+                };
+            };
         }
     });
 </script>
