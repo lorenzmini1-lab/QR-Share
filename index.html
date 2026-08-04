@@ -3,86 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Générateur de QR Code pour Lien Photo</title>
+    <title>Partage Photo P2P (WebRTC)</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f9;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .container {
-            background: #ffffff;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            max-width: 400px;
-            width: 100%;
-            text-align: center;
-        }
-        h2 { color: #333; margin-bottom: 20px; }
-        input[type="text"] {
-            width: 90%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        .btn {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        .btn:hover { background-color: #0056b3; }
-        .qr-container { margin-top: 20px; display: none; }
-        #qrcode { margin-top: 15px; }
-        .warning { font-size: 12px; color: #666; margin-top: 10px; }
+        body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
+        .card { background: white; padding: 20px; border-radius: 12px; max-width: 400px; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .btn { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px; text-decoration: none; display: inline-block; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        #status { font-weight: bold; margin: 15px 0; color: #555; }
+        img { max-width: 100%; border-radius: 8px; margin-top: 15px; }
+        input[type="file"] { display: none; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <h2>Générer un QR Code de Photo</h2>
-        <p style="font-size: 14px; color: #555;">Colle le lien web de ta photo (Google Drive, OneDrive, etc.) :</p>
-        
-        <input type="text" id="urlInput" placeholder="https://exemples.com/ma-photo.jpg">
-        <br>
-        <button class="btn" onclick="generateQR()">Générer le QR Code</button>
+<div class="card">
+    <h2>Partage P2P (Émetteur / Récepteur)</h2>
+    <div id="status">Connexion au réseau P2P...</div>
 
-        <div class="qr-container" id="qrSection">
-            <h3>Ton QR Code :</h3>
-            <canvas id="qrcode"></canvas>
-            <p class="warning">Scanne ce code pour ouvrir la photo.</p>
-        </div>
+    <!-- Section Émetteur -->
+    <div id="senderSection" style="display:none;">
+        <label for="photoInput" class="btn">Sélectionner une photo</label>
+        <input type="file" id="photoInput" accept="image/*">
+        <br>
+        <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
     </div>
 
-    <script>
-        const qr = new QRious({
-            element: document.getElementById('qrcode'),
-            size: 250,
-            level: 'M'
-        });
+    <!-- Section Récepteur -->
+    <div id="receiverSection" style="display:none;">
+        <p>Réception de l'image en cours...</p>
+        <img id="receivedImage" alt="Photo reçue">
+        <br>
+        <!-- Bouton de téléchargement caché par défaut -->
+        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
+    </div>
+</div>
 
-        function generateQR() {
-            const url = document.getElementById('urlInput').value.trim();
-            if (url) {
-                qr.value = url;
-                document.getElementById('qrSection').style.display = 'block';
-            } else {
-                alert("Veuillez entrer un lien valide.");
-            }
+<script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetPeerId = urlParams.get('peer');
+
+    const statusDiv = document.getElementById('status');
+    const senderSection = document.getElementById('senderSection');
+    const receiverSection = document.getElementById('receiverSection');
+    const photoInput = document.getElementById('photoInput');
+    const qrcodeCanvas = document.getElementById('qrcode');
+    const qrHelp = document.getElementById('qrHelp');
+    const receivedImage = document.getElementById('receivedImage');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let currentConnection = null;
+    let selectedImageData = null;
+
+    const qr = new QRious({ element: qrcodeCanvas, size: 250 });
+    const peer = new Peer();
+
+    peer.on('open', (id) => {
+        if (targetPeerId) {
+            // MODE RÉCEPTEUR
+            statusDiv.innerText = "Mode Récepteur : Connexion à l'émetteur...";
+            receiverSection.style.display = 'block';
+
+            const conn = peer.connect(targetPeerId);
+            conn.on('open', () => {
+                statusDiv.innerText = "Connecté ! En attente du transfert...";
+            });
+            conn.on('data', (data) => {
+                // Afficher la photo reçue
+                receivedImage.src = data;
+                
+                // Configurer le bouton de téléchargement
+                downloadBtn.href = data;
+                downloadBtn.style.display = 'inline-block';
+                
+                statusDiv.innerText = "Photo reçue avec succès !";
+            });
+        } else {
+            // MODE ÉMETTEUR
+            statusDiv.innerText = "Mode Émetteur prêt. Choisis une photo.";
+            senderSection.style.display = 'block';
+
+            const receiverUrl = `${window.location.origin}${window.location.pathname}?peer=${id}`;
+            qr.value = receiverUrl;
+
+            peer.on('connection', (conn) => {
+                currentConnection = conn;
+                statusDiv.innerText = "Récepteur connecté !";
+                
+                conn.on('open', () => {
+                    if (selectedImageData) {
+                        conn.send(selectedImageData);
+                        statusDiv.innerText = "Photo envoyée !";
+                    }
+                });
+            });
         }
-    </script>
+    });
+
+    photoInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                selectedImageData = event.target.result;
+                qrcodeCanvas.style.display = 'inline-block';
+                qrHelp.style.display = 'block';
+
+                if (currentConnection) {
+                    currentConnection.send(selectedImageData);
+                    statusDiv.innerText = "Photo envoyée !";
+                } else {
+                    statusDiv.innerText = "Fais scanner le QR code pour envoyer la photo.";
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+</script>
 
 </body>
 </html>
