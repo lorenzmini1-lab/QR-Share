@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo Universal</title>
+    <title>Partage Photo Direct</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -18,7 +18,7 @@
 <body>
 
 <div class="card">
-    <h2>Partage Photo Universal</h2>
+    <h2>Partage Photo Direct</h2>
     <div id="status">Chargement...</div>
 
     <!-- Section Émetteur -->
@@ -40,7 +40,7 @@
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const photoKeyParam = urlParams.get('key');
+    const rawImgData = urlParams.get('img');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -51,12 +51,9 @@
     const receivedImage = document.getElementById('receivedImage');
     const downloadBtn = document.getElementById('downloadBtn');
 
-    const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
-    
-    // Bucket public partagé
-    const BUCKET_ID = "bucket_partage_photo_app";
+    const qr = new QRious({ element: qrcodeCanvas, size: 280, level: 'L' });
 
-    function compressImage(file, callback) {
+    function compressForQR(file, callback) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = (e) => {
@@ -64,39 +61,36 @@
             img.src = e.target.result;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let max = 600;
+                let max = 180; // Petite résolution pour tenir dans le QR code
                 let w = img.width, h = img.height;
                 if (w > h) { if (w > max) { h *= max / w; w = max; } }
                 else { if (h > max) { w *= max / h; h = max; } }
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                callback(canvas.toDataURL('image/jpeg', 0.5));
+                
+                // Utilisation du WebP/JPEG fortement compressé
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.25);
+                callback(compressedDataUrl);
             };
         };
     }
 
-    if (photoKeyParam) {
+    if (rawImgData) {
         // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Chargement de la photo...";
-
-        fetch(`https://kvdb.io/${BUCKET_ID}/${photoKeyParam}`)
-        .then(res => {
-            if (!res.ok) throw new Error("Image introuvable");
-            return res.text();
-        })
-        .then(base64Data => {
-            receivedImage.src = base64Data;
+        
+        try {
+            const fullImageSrc = decodeURIComponent(rawImgData);
+            receivedImage.src = fullImageSrc;
             receivedImage.style.display = 'block';
-            downloadBtn.href = base64Data;
+            downloadBtn.href = fullImageSrc;
             downloadBtn.style.display = 'inline-block';
             statusDiv.innerText = "Photo reçue avec succès !";
-        })
-        .catch(() => {
-            statusDiv.innerText = "Erreur de récupération ou lien expiré.";
-        });
+        } catch (e) {
+            statusDiv.innerText = "Erreur lors du décodage de l'image.";
+        }
 
     } else {
         // MODE ÉMETTEUR
@@ -106,31 +100,20 @@
         photoInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
-                statusDiv.innerText = "Optimisation de la photo...";
+                statusDiv.innerText = "Génération du QR Code...";
 
-                compressImage(file, (base64Data) => {
-                    statusDiv.innerText = "Transfert de la photo (5G/Wi-Fi)...";
+                compressForQR(file, (dataUrl) => {
+                    const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(dataUrl)}`;
+                    
+                    if (shareableUrl.length > 2500) {
+                        statusDiv.innerText = "L'image est trop grande pour tenir dans un QR Code.";
+                        return;
+                    }
 
-                    const key = "img_" + Date.now();
-
-                    fetch(`https://kvdb.io/${BUCKET_ID}/${key}`, {
-                        method: 'POST',
-                        body: base64Data
-                    })
-                    .then(res => {
-                        if (res.ok) {
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?key=${key}`;
-                            qr.value = shareableUrl;
-                            qrcodeCanvas.style.display = 'inline-block';
-                            qrHelp.style.display = 'block';
-                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
-                        } else {
-                            statusDiv.innerText = "Erreur lors de l'envoi de l'image.";
-                        }
-                    })
-                    .catch(() => {
-                        statusDiv.innerText = "Erreur de connexion.";
-                    });
+                    qr.value = shareableUrl;
+                    qrcodeCanvas.style.display = 'inline-block';
+                    qrHelp.style.display = 'block';
+                    statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
                 });
             }
         });
