@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo QR</title>
+    <title>Partage Photo Direct</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -18,7 +18,7 @@
 <body>
 
 <div class="card">
-    <h2>Partage Photo QR</h2>
+    <h2>Partage Photo Direct</h2>
     <div id="status">Chargement...</div>
 
     <!-- Section Émetteur -->
@@ -26,13 +26,15 @@
         <label for="photoInput" class="btn">Sélectionner une photo</label>
         <input type="file" id="photoInput" accept="image/*">
         <br>
+        <button id="manualSendBtn" class="btn btn-success" style="display:none;">Envoyer / Renvoyer</button>
+        <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
         <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
     </div>
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
-        <p id="recvHelp">Récupération de la photo...</p>
+        <p id="recvHelp">En attente du signal de l'émetteur...</p>
         <img id="receivedImage" alt="" style="display:none;">
         <br>
         <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
@@ -41,12 +43,13 @@
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const imgId = urlParams.get('id');
+    const room = urlParams.get('room');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
     const receiverSection = document.getElementById('receiverSection');
     const photoInput = document.getElementById('photoInput');
+    const manualSendBtn = document.getElementById('manualSendBtn');
     const qrcodeCanvas = document.getElementById('qrcode');
     const qrHelp = document.getElementById('qrHelp');
     const receivedImage = document.getElementById('receivedImage');
@@ -62,90 +65,91 @@
             img.src = e.target.result;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let max = 1000;
+                let max = 600;
                 let w = img.width, h = img.height;
                 if (w > h) { if (w > max) { h *= max / w; w = max; } }
                 else { if (h > max) { w *= max / h; h = max; } }
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                canvas.toBlob((blob) => {
-                    callback(blob);
-                }, 'image/jpeg', 0.7);
+                callback(canvas.toDataURL('image/jpeg', 0.5));
             };
         };
     }
 
-    if (imgId) {
+    if (room) {
         // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Téléchargement de l'image...";
+        statusDiv.innerText = "Mode Récepteur actif.";
 
-        let attempts = 0;
-        function fetchPhoto() {
-            attempts++;
-            fetch(`https://ntfy.sh/${imgId}/raw`)
-                .then(res => {
-                    if (!res.ok) throw new Error("Pas encore prêt");
-                    return res.blob();
-                })
-                .then(blob => {
-                    if (blob.size === 0) throw new Error("Fichier vide");
-                    const imgUrl = URL.createObjectURL(blob);
-                    receivedImage.src = imgUrl;
-                    receivedImage.style.display = 'inline-block';
-                    downloadBtn.href = imgUrl;
-                    downloadBtn.style.display = 'inline-block';
-                    statusDiv.innerText = "Photo reçue avec succès !";
-                })
-                .catch(() => {
-                    if (attempts < 10) {
-                        statusDiv.innerText = `Connexion au transfert (${attempts}/10)...`;
-                        setTimeout(fetchPhoto, 1500);
-                    } else {
-                        statusDiv.innerText = "Erreur : La photo n'a pas pu être récupérée.";
-                    }
-                });
+        const channel = new BroadcastChannel(room);
+
+        function checkData(data) {
+            if (data) {
+                receivedImage.src = data;
+                receivedImage.style.display = 'inline-block';
+                downloadBtn.href = data;
+                downloadBtn.style.display = 'inline-block';
+                statusDiv.innerText = "Photo reçue avec succès !";
+            }
         }
 
-        fetchPhoto();
+        channel.onmessage = (event) => {
+            checkData(event.data);
+        };
+
+        // Vérification directe dans le stockage local du navigateur
+        window.addEventListener('storage', (e) => {
+            if (e.key === room) {
+                checkData(e.newValue);
+            }
+        });
+
+        // Demande d'envoi immédiat à l'émetteur
+        channel.postMessage('ping');
 
     } else {
         // MODE ÉMETTEUR
         statusDiv.innerText = "Sélectionne une photo à partager.";
         senderSection.style.display = 'block';
 
+        const roomId = 'room_' + Math.floor(Math.random() * 10000);
+        const channel = new BroadcastChannel(roomId);
+        let imageData = null;
+
+        function broadcastPhoto() {
+            if (imageData) {
+                channel.postMessage(imageData);
+                localStorage.setItem(roomId, imageData);
+                statusDiv.innerText = "Photo envoyée au récepteur !";
+            }
+        }
+
+        channel.onmessage = (event) => {
+            if (event.data === 'ping') {
+                broadcastPhoto();
+            }
+        };
+
+        const shareableUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+        qr.value = shareableUrl;
+        qrcodeCanvas.style.display = 'inline-block';
+        qrHelp.style.display = 'block';
+
         photoInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
-                statusDiv.innerText = "Optimisation de l'image...";
-                
-                compressImage(file, (compressedBlob) => {
-                    statusDiv.innerText = "Envoi vers le canal...";
-                    const channelId = 'photo_' + Math.random().toString(36).substring(2, 11);
-
-                    fetch(`https://ntfy.sh/${channelId}`, {
-                        method: 'PUT',
-                        body: compressedBlob
-                    })
-                    .then(res => {
-                        if (res.ok) {
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?id=${channelId}`;
-                            qr.value = shareableUrl;
-                            qrcodeCanvas.style.display = 'inline-block';
-                            qrHelp.style.display = 'block';
-                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
-                        } else {
-                            statusDiv.innerText = "Erreur d'envoi du fichier.";
-                        }
-                    })
-                    .catch(() => {
-                        statusDiv.innerText = "Erreur de réseau.";
-                    });
+                statusDiv.innerText = "Préparation de la photo...";
+                compressImage(file, (base64) => {
+                    imageData = base64;
+                    manualSendBtn.style.display = 'inline-block';
+                    broadcastPhoto();
                 });
             }
         });
+
+        manualSendBtn.addEventListener('click', broadcastPhoto);
     }
 </script>
 
