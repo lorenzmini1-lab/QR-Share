@@ -28,7 +28,7 @@
         <input type="file" id="photoInput" accept="image/*">
         <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
-        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone (4G ou Wi-Fi).</p>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
     </div>
 
     <!-- Section Récepteur -->
@@ -57,13 +57,23 @@
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
 
-    // Serveurs STUN publics pour passer les pare-feux 4G/5G
+    // Ajout de serveurs STUN + TURN gratuits pour forcer le passage 4G/5G <-> Wi-Fi
     const peer = new Peer({
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
+                { urls: 'stun:openrelay.metered.ca:80' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                }
             ]
         }
     });
@@ -101,9 +111,9 @@
             // MODE RÉCEPTEUR
             senderSection.style.display = 'none';
             receiverSection.style.display = 'block';
-            statusDiv.innerText = "Connexion à l'émetteur...";
+            statusDiv.innerText = "Connexion à l'émetteur (4G/Wi-Fi)...";
 
-            const conn = peer.connect(targetPeerId);
+            const conn = peer.connect(targetPeerId, { reliable: true });
 
             conn.on('open', () => {
                 statusDiv.innerText = "Connecté ! En attente de l'image...";
@@ -118,7 +128,7 @@
             });
 
             conn.on('error', () => {
-                statusDiv.innerText = "Erreur de connexion entre les deux téléphones.";
+                statusDiv.innerText = "Erreur de connexion entre les téléphones.";
             });
 
         } else {
