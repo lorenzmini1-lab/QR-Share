@@ -34,7 +34,7 @@
     <div id="receiverSection" style="display:none;">
         <img id="receivedImage" alt="Photo transmise" style="display:none;">
         <br>
-        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
+        <button id="downloadBtn" class="btn btn-success" style="display:none;">Télécharger la photo</button>
     </div>
 </div>
 
@@ -94,8 +94,29 @@
 
         receivedImage.src = rawUrl;
         receivedImage.style.display = 'block';
-        downloadBtn.href = rawUrl;
-        downloadBtn.target = "_blank";
+
+        // Gestion forcée du téléchargement pour mobile
+        downloadBtn.addEventListener('click', () => {
+            statusDiv.innerText = "Téléchargement en cours...";
+            fetch(rawUrl)
+                .then(response => response.blob())
+                .then(blob => {
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = "photo_recue.jpg";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+                    statusDiv.innerText = "Téléchargement terminé !";
+                })
+                .catch(() => {
+                    // Repli si le téléchargement automatique est bloqué : ouverture dans un nouvel onglet
+                    window.open(rawUrl, '_blank');
+                    statusDiv.innerText = "Appuie longuement sur l'image pour la sauvegarder.";
+                });
+        });
 
     } else {
         // MODE ÉMETTEUR
@@ -115,7 +136,6 @@
                     formData.append('time', '1h');
                     formData.append('fileToUpload', compressedBlob, 'photo.jpg');
 
-                    // Proxy CORS vers Litterbox (Catbox)
                     fetch('https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), {
                         method: 'POST',
                         body: formData
