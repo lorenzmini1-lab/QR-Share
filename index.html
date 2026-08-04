@@ -55,6 +55,7 @@
 
         .qr-actions { margin-top: 15px; display: none; }
         .pass-input { width: 80%; padding: 8px; margin: 10px 0; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-color); text-align: center; }
+        .pass-warning { font-size: 12px; color: #d9534f; margin-top: 2px; display: none; font-weight: bold; }
         .footer-signature { position: absolute; bottom: 10px; left: 0; right: 0; font-size: 12px; color: #888; font-style: italic; }
     </style>
 </head>
@@ -83,6 +84,7 @@
 
         <div>
             <input type="password" id="encryptPassword" class="pass-input" placeholder="Mot de passe optionnel">
+            <div id="passWarning" class="pass-warning">💡 Resélectionne ou glisse à nouveau ton fichier pour appliquer ce mot de passe !</div>
         </div>
 
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
@@ -127,6 +129,7 @@
     const fileInput = document.getElementById('fileInput');
     const dropZone = document.getElementById('dropZone');
     const encryptPassword = document.getElementById('encryptPassword');
+    const passWarning = document.getElementById('passWarning');
     const decryptPassword = document.getElementById('decryptPassword');
     const decryptSection = document.getElementById('decryptSection');
     const qrcodeCanvas = document.getElementById('qrcode');
@@ -158,6 +161,19 @@
         document.body.classList.toggle('dark-theme');
         themeToggle.innerText = document.body.classList.contains('dark-theme') ? '☀️' : '🌙';
     });
+
+    // Fonction pour masquer le QR code et réinitialiser le statut
+    function resetQrCodeDisplay() {
+        qrcodeCanvas.style.display = 'none';
+        qrHelp.style.display = 'none';
+        qrActions.style.display = 'none';
+        passWarning.style.display = 'block';
+        statusDiv.innerText = "Mot de passe modifié : sélectionne ou glisse ton fichier à nouveau.";
+    }
+
+    // Réagir dès qu'on clique dans la case ou qu'on tape un mot de passe
+    encryptPassword.addEventListener('focus', resetQrCodeDisplay);
+    encryptPassword.addEventListener('input', resetQrCodeDisplay);
 
     function showProgress(percent) {
         progressContainer.style.display = 'block';
@@ -211,7 +227,6 @@
         }
 
         const password = encryptPassword.value.trim();
-        let isEncrypted = false;
 
         if (password) {
             statusDiv.innerText = "Chiffrement du fichier...";
@@ -259,6 +274,7 @@
                     qrcodeCanvas.style.display = 'inline-block';
                     qrHelp.style.display = 'block';
                     qrActions.style.display = 'block';
+                    passWarning.style.display = 'none';
                     statusDiv.innerHTML = "QR Code prêt ! Scanne-le ou partage-le.<br><br>Le Qr code est valide pendant 1 heure !!!";
                 } else {
                     statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
@@ -337,7 +353,7 @@
                             }
 
                             const dataUrl = decryptedText.replace(VALIDATION_PREFIX, '');
-                            const fetchRes = fetch(dataUrl)
+                            fetch(dataUrl)
                                 .then(res => res.blob())
                                 .then(blob => {
                                     triggerDownload(blob, fileNameParam);
