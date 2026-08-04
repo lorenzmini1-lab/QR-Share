@@ -154,6 +154,7 @@
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
     let currentShareableUrl = "";
+    let fileUploaded = false; // Variable qui retient si un fichier a déjà été généré
 
     const VALIDATION_PREFIX = "LORENZO_VALID_FILE::";
 
@@ -162,18 +163,19 @@
         themeToggle.innerText = document.body.classList.contains('dark-theme') ? '☀️' : '🌙';
     });
 
-    // Fonction pour masquer le QR code et réinitialiser le statut
-    function resetQrCodeDisplay() {
-        qrcodeCanvas.style.display = 'none';
-        qrHelp.style.display = 'none';
-        qrActions.style.display = 'none';
-        passWarning.style.display = 'block';
-        statusDiv.innerText = "Mot de passe modifié : sélectionne ou glisse ton fichier à nouveau.";
+    // Masquer le QR code et afficher l'avertissement UNIQUEMENT si un fichier avait déjà été soumis
+    function handlePasswordClick() {
+        if (fileUploaded) {
+            qrcodeCanvas.style.display = 'none';
+            qrHelp.style.display = 'none';
+            qrActions.style.display = 'none';
+            passWarning.style.display = 'block';
+            statusDiv.innerText = "Mot de passe en cours de saisie : sélectionne ou glisse ton fichier à nouveau.";
+        }
     }
 
-    // Réagir dès qu'on clique dans la case ou qu'on tape un mot de passe
-    encryptPassword.addEventListener('focus', resetQrCodeDisplay);
-    encryptPassword.addEventListener('input', resetQrCodeDisplay);
+    encryptPassword.addEventListener('focus', handlePasswordClick);
+    encryptPassword.addEventListener('input', handlePasswordClick);
 
     function showProgress(percent) {
         progressContainer.style.display = 'block';
@@ -270,6 +272,7 @@
                 if (fileUrl && fileUrl.startsWith('http')) {
                     currentShareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}&enc=${isEncrypted ? '1' : '0'}`;
                     
+                    fileUploaded = true; // On enregistre qu'un fichier est bien déposé
                     qr.value = currentShareableUrl;
                     qrcodeCanvas.style.display = 'inline-block';
                     qrHelp.style.display = 'block';
