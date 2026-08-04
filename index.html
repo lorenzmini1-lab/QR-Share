@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo P2P (WebRTC)</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <title>Partage Photo Sécurisé</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -19,156 +18,77 @@
 <body>
 
 <div class="card">
-    <h2>Partage P2P (Émetteur / Récepteur)</h2>
-    <div id="status">Initialisation...</div>
+    <h2>Partage Instantané</h2>
+    <div id="status">Sélectionne une photo à partager.</div>
 
     <!-- Section Émetteur -->
-    <div id="senderSection" style="display:none;">
+    <div id="senderSection">
         <label for="photoInput" class="btn">Sélectionner une photo</label>
         <input type="file" id="photoInput" accept="image/*">
         <br>
-        <button id="sendBtn" class="btn btn-success" style="display:none;">Envoyer la photo</button>
-        <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
-        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec n'importe quel téléphone pour télécharger la photo.</p>
     </div>
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
-        <p id="recvHelp">En attente de la photo...</p>
-        <img id="receivedImage" alt="" style="display:none;">
-        <br>
-        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
+        <p>Téléchargement de l'image...</p>
+        <a id="downloadBtn" class="btn btn-success" download="photo.jpg">Télécharger la photo</a>
     </div>
 </div>
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const targetPeerId = urlParams.get('peer');
+    const downloadUrl = urlParams.get('download');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
     const receiverSection = document.getElementById('receiverSection');
     const photoInput = document.getElementById('photoInput');
-    const sendBtn = document.getElementById('sendBtn');
     const qrcodeCanvas = document.getElementById('qrcode');
     const qrHelp = document.getElementById('qrHelp');
-    const receivedImage = document.getElementById('receivedImage');
     const downloadBtn = document.getElementById('downloadBtn');
-
-    let currentConn = null;
-    let selectedImageData = null;
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250 });
 
-    // Configuration STUN Google pour traverser les pare-feux mobiles
-    const customConfig = {
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        }
-    };
-
-    const peer = new Peer(customConfig);
-
-    function compressImage(file, callback) {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (e) => {
-            const img = new Image();
-            img.src = e.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let max = 800;
-                let w = img.width, h = img.height;
-                if (w > h) { if (w > max) { h *= max / w; w = max; } }
-                else { if (h > max) { w *= max / h; h = max; } }
-                canvas.width = w; canvas.height = h;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, w, h);
-                callback(canvas.toDataURL('image/jpeg', 0.6));
-            };
-        };
+    // Si on ouvre la page via le QR code scanned
+    if (downloadUrl) {
+        senderSection.style.display = 'none';
+        receiverSection.style.display = 'block';
+        statusDiv.innerText = "Photo prête à être téléchargée !";
+        downloadBtn.href = decodeURIComponent(downloadUrl);
     }
-
-    function doSend() {
-        if (currentConn && selectedImageData) {
-            statusDiv.innerText = "Transfert en cours...";
-            currentConn.send(selectedImageData);
-            statusDiv.innerText = "Photo transmise !";
-        }
-    }
-
-    peer.on('open', (id) => {
-        if (targetPeerId) {
-            // MODE RÉCEPTEUR
-            statusDiv.innerText = "Connexion à l'émetteur...";
-            receiverSection.style.display = 'block';
-
-            const conn = peer.connect(targetPeerId, { reliable: true });
-            
-            conn.on('open', () => {
-                statusDiv.innerText = "Liaison établie ! En attente du transfert...";
-            });
-
-            conn.on('data', (data) => {
-                receivedImage.src = data;
-                receivedImage.style.display = 'inline-block';
-                downloadBtn.href = data;
-                downloadBtn.style.display = 'inline-block';
-                statusDiv.innerText = "Photo reçue !";
-            });
-
-            conn.on('error', () => { statusDiv.innerText = "Erreur de connexion P2P."; });
-
-        } else {
-            // MODE ÉMETTEUR
-            statusDiv.innerText = "Émetteur prêt. Choisis une photo.";
-            senderSection.style.display = 'block';
-
-            const receiverUrl = `${window.location.origin}${window.location.pathname}?peer=${id}`;
-            qr.value = receiverUrl;
-
-            peer.on('connection', (conn) => {
-                currentConn = conn;
-                
-                conn.on('open', () => {
-                    statusDiv.innerText = "Récepteur connecté !";
-                    sendBtn.style.display = 'inline-block';
-                    if (selectedImageData) doSend();
-                });
-
-                conn.on('data', (data) => {});
-            });
-        }
-    });
-
-    peer.on('error', (err) => {
-        statusDiv.innerText = "Erreur PeerJS : " + err.type;
-    });
 
     photoInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
-            statusDiv.innerText = "Compression...";
-            compressImage(file, (base64) => {
-                selectedImageData = base64;
-                qrcodeCanvas.style.display = 'inline-block';
-                qrHelp.style.display = 'block';
+            statusDiv.innerText = "Création du lien temporaire...";
+            
+            const formData = new FormData();
+            formData.append('file', file);
 
-                if (currentConn) {
-                    sendBtn.style.display = 'inline-block';
-                    doSend();
+            // Envoi vers l'API de transfert temporaire gratuit (file.io)
+            fetch('https://file.io', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const shareableUrl = `${window.location.origin}${window.location.pathname}?download=${encodeURIComponent(data.link)}`;
+                    qr.value = shareableUrl;
+                    qrcodeCanvas.style.display = 'inline-block';
+                    qrHelp.style.display = 'block';
+                    statusDiv.innerText = "QR Code prêt ! Scanne-le avec l'autre téléphone.";
                 } else {
-                    statusDiv.innerText = "Scanne le QR code maintenant.";
+                    statusDiv.innerText = "Erreur lors de la création du lien.";
                 }
+            })
+            .catch(() => {
+                statusDiv.innerText = "Erreur de connexion au service d'envoi.";
             });
         }
     });
-
-    sendBtn.addEventListener('click', doSend);
 </script>
 
 </body>
