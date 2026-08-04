@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo 4G & Wi-Fi</title>
+    <title>Partage Photo Universal (4G / Wi-Fi)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -18,7 +18,7 @@
 <body>
 
 <div class="card">
-    <h2>Partage Photo Universal (4G / Wi-Fi)</h2>
+    <h2>Partage Photo Universal</h2>
     <div id="status">Chargement...</div>
 
     <!-- Section Émetteur -->
@@ -27,7 +27,7 @@
         <input type="file" id="photoInput" accept="image/*">
         <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
-        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec n'importe quel téléphone (4G ou Wi-Fi).</p>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
     </div>
 
     <!-- Section Récepteur -->
@@ -100,30 +100,32 @@
                 statusDiv.innerText = "Optimisation de la photo...";
 
                 compressImage(file, (compressedBlob) => {
-                    statusDiv.innerText = "Génération du lien de partage...";
+                    statusDiv.innerText = "Envoi de la photo en cours...";
 
                     const formData = new FormData();
-                    formData.append('file', compressedBlob);
-                    formData.append('upload_preset', 'docs_upload_example_us_preset'); // Preset public Cloudinary
+                    formData.append('file', compressedBlob, 'photo.jpg');
 
-                    fetch('https://api.cloudinary.com/v1_1/demo/image/upload', {
+                    fetch('https://tmpfiles.org/api/v1/upload', {
                         method: 'POST',
                         body: formData
                     })
                     .then(res => res.json())
                     .then(data => {
-                        if (data.secure_url) {
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(data.secure_url)}`;
+                        if (data.status === 'success' && data.data.url) {
+                            // Transformation de l'URL pour le téléchargement direct du fichier
+                            const directUrl = data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(directUrl)}`;
+                            
                             qr.value = shareableUrl;
                             qrcodeCanvas.style.display = 'inline-block';
                             qrHelp.style.display = 'block';
                             statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
                         } else {
-                            statusDiv.innerText = "Erreur lors de la préparation de l'image.";
+                            statusDiv.innerText = "Erreur lors de la préparation de la photo.";
                         }
                     })
                     .catch(() => {
-                        statusDiv.innerText = "Erreur de connexion réseau.";
+                        statusDiv.innerText = "Erreur d'envoi. Vérifie ta connexion.";
                     });
                 });
             }
