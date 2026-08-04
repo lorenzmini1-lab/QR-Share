@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo Universal</title>
+    <title>Partage Photo Direct</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -34,13 +34,13 @@
     <div id="receiverSection" style="display:none;">
         <img id="receivedImage" alt="Photo transmise" style="display:none;">
         <br>
-        <a id="downloadBtn" class="btn btn-success" style="display:none;" target="_blank" download="photo_recue.jpg">Télécharger la photo</a>
+        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
     </div>
 </div>
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const imgUrlParam = urlParams.get('img');
+    const imgDataParam = urlParams.get('d');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -51,9 +51,10 @@
     const receivedImage = document.getElementById('receivedImage');
     const downloadBtn = document.getElementById('downloadBtn');
 
-    const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
+    // QR Code configuré pour accepter une densité maximale de données
+    const qr = new QRious({ element: qrcodeCanvas, size: 300, level: 'L' });
 
-    function compressImage(file, callback) {
+    function compressAndConvert(file, callback) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = (e) => {
@@ -61,40 +62,37 @@
             img.src = e.target.result;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let max = 1000;
+                // Réduction optimale des dimensions pour tenir directement dans le QR code
+                let max = 320;
                 let w = img.width, h = img.height;
                 if (w > h) { if (w > max) { h *= max / w; w = max; } }
                 else { if (h > max) { w *= max / h; h = max; } }
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                canvas.toBlob((blob) => {
-                    callback(blob);
-                }, 'image/jpeg', 0.7);
+                
+                // Compression JPG pour minimiser la taille du texte Base64
+                callback(canvas.toDataURL('image/jpeg', 0.4));
             };
         };
     }
 
-    if (imgUrlParam) {
+    if (imgDataParam) {
         // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Chargement de la photo...";
+        statusDiv.innerText = "Lecture de la photo...";
 
-        const finalUrl = decodeURIComponent(imgUrlParam);
-        
-        receivedImage.onload = () => {
-            statusDiv.innerText = "Photo reçue avec succès !";
+        try {
+            const fullBase64 = "data:image/jpeg;base64," + decodeURIComponent(imgDataParam);
+            receivedImage.src = fullBase64;
+            receivedImage.style.display = 'block';
+            downloadBtn.href = fullBase64;
             downloadBtn.style.display = 'inline-block';
-        };
-        
-        receivedImage.onerror = () => {
-            statusDiv.innerText = "Erreur d'affichage de la photo.";
-        };
-
-        receivedImage.src = finalUrl;
-        receivedImage.style.display = 'block';
-        downloadBtn.href = finalUrl;
+            statusDiv.innerText = "Photo reçue avec succès !";
+        } catch (err) {
+            statusDiv.innerText = "Erreur lors du décodage de la photo.";
+        }
 
     } else {
         // MODE ÉMETTEUR
@@ -104,35 +102,17 @@
         photoInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
-                statusDiv.innerText = "Optimisation de la photo...";
+                statusDiv.innerText = "Génération du QR Code en local...";
 
-                compressImage(file, (compressedBlob) => {
-                    statusDiv.innerText = "Envoi de la photo...";
-
-                    const formData = new FormData();
-                    formData.append('reqtype', 'fileupload');
-                    formData.append('fileToUpload', compressedBlob, 'photo.jpg');
-
-                    fetch('https://catbox.moe/user/api.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.text())
-                    .then(imageUrl => {
-                        if (imageUrl && imageUrl.startsWith('http')) {
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(imageUrl.trim())}`;
-                            
-                            qr.value = shareableUrl;
-                            qrcodeCanvas.style.display = 'inline-block';
-                            qrHelp.style.display = 'block';
-                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
-                        } else {
-                            statusDiv.innerText = "Erreur lors de la préparation de la photo.";
-                        }
-                    })
-                    .catch(() => {
-                        statusDiv.innerText = "Erreur d'envoi. Vérifie ta connexion.";
-                    });
+                compressAndConvert(file, (dataUrl) => {
+                    // Extrait la chaîne Base64 pure
+                    const base64Data = dataUrl.replace("data:image/jpeg;base64,", "");
+                    const shareableUrl = `${window.location.origin}${window.location.pathname}?d=${encodeURIComponent(base64Data)}`;
+                    
+                    qr.value = shareableUrl;
+                    qrcodeCanvas.style.display = 'inline-block';
+                    qrHelp.style.display = 'block';
+                    statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
                 });
             }
         });
