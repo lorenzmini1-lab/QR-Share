@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo Universal (4G / Wi-Fi)</title>
+    <title>Partage Photo Universal</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -11,7 +11,7 @@
         .btn { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px; text-decoration: none; display: inline-block; }
         .btn-success { background: #28a745; }
         #status { font-weight: bold; margin: 15px 0; color: #555; }
-        img { max-width: 100%; border-radius: 8px; margin-top: 15px; }
+        img { max-width: 100%; border-radius: 8px; margin-top: 15px; display: block; margin-left: auto; margin-right: auto; }
         input[type="file"] { display: none; }
     </style>
 </head>
@@ -32,10 +32,9 @@
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
-        <p>Récupération de la photo en cours...</p>
-        <img id="receivedImage" alt="" style="display:none;">
+        <img id="receivedImage" alt="Photo transmise" style="display:none;">
         <br>
-        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
+        <a id="downloadBtn" class="btn btn-success" style="display:none;" target="_blank" download="photo_recue.jpg">Télécharger la photo</a>
     </div>
 </div>
 
@@ -69,9 +68,9 @@
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                canvas.toBlob((blob) => {
-                    callback(blob);
-                }, 'image/jpeg', 0.7);
+                // Export en Base64 sans le préfixe pour ImgBB
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                callback(dataUrl.split(',')[1]);
             };
         };
     }
@@ -83,11 +82,19 @@
         statusDiv.innerText = "Chargement de la photo...";
 
         const finalUrl = decodeURIComponent(imgUrlParam);
+        
+        receivedImage.onload = () => {
+            statusDiv.innerText = "Photo reçue avec succès !";
+            downloadBtn.style.display = 'inline-block';
+        };
+        
+        receivedImage.onerror = () => {
+            statusDiv.innerText = "Erreur d'affichage de la photo.";
+        };
+
         receivedImage.src = finalUrl;
-        receivedImage.style.display = 'inline-block';
+        receivedImage.style.display = 'block';
         downloadBtn.href = finalUrl;
-        downloadBtn.style.display = 'inline-block';
-        statusDiv.innerText = "Photo reçue avec succès !";
 
     } else {
         // MODE ÉMETTEUR
@@ -99,21 +106,21 @@
             if (file) {
                 statusDiv.innerText = "Optimisation de la photo...";
 
-                compressImage(file, (compressedBlob) => {
-                    statusDiv.innerText = "Envoi de la photo en cours...";
+                compressImage(file, (base64String) => {
+                    statusDiv.innerText = "Envoi de la photo...";
 
                     const formData = new FormData();
-                    formData.append('file', compressedBlob, 'photo.jpg');
+                    formData.append('image', base64String);
 
-                    fetch('https://tmpfiles.org/api/v1/upload', {
+                    // Clé API publique gratuite pour le transfert
+                    fetch('https://api.imgbb.com/1/upload?key=6d207e02198a847aa98d0a2a901485a5', {
                         method: 'POST',
                         body: formData
                     })
                     .then(res => res.json())
-                    .then(data => {
-                        if (data.status === 'success' && data.data.url) {
-                            // Transformation de l'URL pour le téléchargement direct du fichier
-                            const directUrl = data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+                    .then(resData => {
+                        if (resData.success && resData.data.url) {
+                            const directUrl = resData.data.url;
                             const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(directUrl)}`;
                             
                             qr.value = shareableUrl;
