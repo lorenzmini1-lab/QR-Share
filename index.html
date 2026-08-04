@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Partage Fichier Universal</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <!-- Convertisseur HEIC vers JPEG -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
         .card { background: white; padding: 20px; border-radius: 12px; max-width: 400px; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
@@ -98,25 +100,52 @@
         progressBar.style.width = '0%';
     }
 
-    function processFile(file, callback) {
-        if (file.type.startsWith('image/')) {
+    function compressCanvasImage(img, fileName, callback) {
+        const canvas = document.createElement('canvas');
+        let max = 800;
+        let w = img.width, h = img.height;
+        if (w > h) { if (w > max) { h *= max / w; w = max; } }
+        else { if (h > max) { w *= max / h; h = max; } }
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+            const newName = fileName.replace(/\.(heic|heif)$/i, '.jpg');
+            callback(blob, newName);
+        }, 'image/jpeg', 0.7);
+    }
+
+    async function processFile(file, callback) {
+        const isHeic = file.name.match(/\.(heic|heif)$/i);
+        const isStandardImage = file.type.startsWith('image/') || isHeic;
+
+        if (isStandardImage) {
+            statusDiv.innerText = isHeic ? "Conversion du format HEIC..." : "Optimisation de l'image...";
+            
+            let blobToProcess = file;
+
+            if (isHeic) {
+                try {
+                    const convertedBlob = await heic2any({
+                        blob: file,
+                        toType: "image/jpeg",
+                        quality: 0.8
+                    });
+                    blobToProcess = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+                } catch (err) {
+                    console.error("Erreur conversion HEIC:", err);
+                    callback(file, file.name);
+                    return;
+                }
+            }
+
             const reader = new FileReader();
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(blobToProcess);
             reader.onload = (e) => {
                 const img = new Image();
                 img.src = e.target.result;
                 img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let max = 800;
-                    let w = img.width, h = img.height;
-                    if (w > h) { if (w > max) { h *= max / w; w = max; } }
-                    else { if (h > max) { w *= max / h; h = max; } }
-                    canvas.width = w; canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, w, h);
-                    canvas.toBlob((blob) => {
-                        callback(blob, file.name);
-                    }, 'image/jpeg', 0.7);
+                    compressCanvasImage(img, file.name, callback);
                 };
             };
         } else {
@@ -248,7 +277,6 @@
             }
         });
 
-        // Bouton Partager le lien
         shareLinkBtn.addEventListener('click', () => {
             if (navigator.share) {
                 navigator.share({
@@ -262,7 +290,6 @@
             }
         });
 
-        // Bouton Télécharger l'image du QR Code
         downloadQrBtn.addEventListener('click', () => {
             const qrImageUrl = qrcodeCanvas.toDataURL("image/png");
             const a = document.createElement('a');
