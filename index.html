@@ -40,7 +40,7 @@
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const binIdParam = urlParams.get('id');
+    const photoKeyParam = urlParams.get('key');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -52,6 +52,9 @@
     const downloadBtn = document.getElementById('downloadBtn');
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
+    
+    // Bucket public partagé
+    const BUCKET_ID = "bucket_partage_photo_app";
 
     function compressImage(file, callback) {
         const reader = new FileReader();
@@ -73,31 +76,26 @@
         };
     }
 
-    if (binIdParam) {
+    if (photoKeyParam) {
         // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Récupération de la photo...";
+        statusDiv.innerText = "Chargement de la photo...";
 
-        fetch(`https://api.jsonbin.io/v3/b/${binIdParam}`, {
-            headers: {
-                'X-Master-Key': '$2a$10$vY3P8iQzS7H2lF5bN9f0uO4WpY8e0r1t2u3v4w5x6y7z8a9b0c1d2' // Clé de lecture publique
-            }
+        fetch(`https://kvdb.io/${BUCKET_ID}/${photoKeyParam}`)
+        .then(res => {
+            if (!res.ok) throw new Error("Image introuvable");
+            return res.text();
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data && data.record && data.record.img) {
-                receivedImage.src = data.record.img;
-                receivedImage.style.display = 'block';
-                downloadBtn.href = data.record.img;
-                downloadBtn.style.display = 'inline-block';
-                statusDiv.innerText = "Photo reçue avec succès !";
-            } else {
-                statusDiv.innerText = "Photo introuvable.";
-            }
+        .then(base64Data => {
+            receivedImage.src = base64Data;
+            receivedImage.style.display = 'block';
+            downloadBtn.href = base64Data;
+            downloadBtn.style.display = 'inline-block';
+            statusDiv.innerText = "Photo reçue avec succès !";
         })
         .catch(() => {
-            statusDiv.innerText = "Erreur de chargement de l'image.";
+            statusDiv.innerText = "Erreur de récupération ou lien expiré.";
         });
 
     } else {
@@ -111,28 +109,23 @@
                 statusDiv.innerText = "Optimisation de la photo...";
 
                 compressImage(file, (base64Data) => {
-                    statusDiv.innerText = "Envoi de la photo en cours...";
+                    statusDiv.innerText = "Transfert de la photo (5G/Wi-Fi)...";
 
-                    fetch('https://api.jsonbin.io/v3/b', {
+                    const key = "img_" + Date.now();
+
+                    fetch(`https://kvdb.io/${BUCKET_ID}/${key}`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Bin-Private': 'false'
-                        },
-                        body: JSON.stringify({ img: base64Data })
+                        body: base64Data
                     })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data && data.metadata && data.metadata.id) {
-                            const binId = data.metadata.id;
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?id=${binId}`;
-                            
+                    .then(res => {
+                        if (res.ok) {
+                            const shareableUrl = `${window.location.origin}${window.location.pathname}?key=${key}`;
                             qr.value = shareableUrl;
                             qrcodeCanvas.style.display = 'inline-block';
                             qrHelp.style.display = 'block';
                             statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
                         } else {
-                            statusDiv.innerText = "Erreur lors de la préparation.";
+                            statusDiv.innerText = "Erreur lors de l'envoi de l'image.";
                         }
                     })
                     .catch(() => {
