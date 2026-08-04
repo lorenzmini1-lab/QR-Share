@@ -10,15 +10,17 @@
         .card { background: white; padding: 20px; border-radius: 12px; max-width: 400px; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .btn { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px; text-decoration: none; display: inline-block; }
         .btn-success { background: #28a745; }
+        .btn-secondary { background: #6c757d; }
         #status { font-weight: bold; margin: 15px 0; color: #555; }
         img { max-width: 100%; border-radius: 8px; margin-top: 15px; display: block; margin-left: auto; margin-right: auto; }
         #fileInfo { margin-top: 15px; font-weight: bold; color: #333; word-break: break-all; }
         input[type="file"] { display: none; }
         
-        /* Style de la barre de progression */
         .progress-container { width: 100%; background-color: #e0e0e0; border-radius: 8px; overflow: hidden; margin: 15px 0; display: none; }
         .progress-bar { width: 0%; height: 20px; background-color: #28a745; transition: width 0.2s ease; }
         #progressText { font-size: 13px; font-weight: bold; color: #333; margin-top: 5px; display: none; }
+
+        .qr-actions { margin-top: 15px; display: none; }
     </style>
 </head>
 <body>
@@ -40,6 +42,12 @@
         <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
         <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
+        
+        <!-- Actions pour le QR Code -->
+        <div id="qrActions" class="qr-actions">
+            <button id="shareLinkBtn" class="btn">Partager le lien</button>
+            <button id="downloadQrBtn" class="btn btn-secondary">Télécharger le QR Code</button>
+        </div>
     </div>
 
     <!-- Section Récepteur -->
@@ -70,7 +78,12 @@
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
 
+    const qrActions = document.getElementById('qrActions');
+    const shareLinkBtn = document.getElementById('shareLinkBtn');
+    const downloadQrBtn = document.getElementById('downloadQrBtn');
+
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
+    let currentShareableUrl = "";
 
     function showProgress(percent) {
         progressContainer.style.display = 'block';
@@ -132,7 +145,6 @@
             downloadBtn.style.display = 'none';
             showProgress(0);
 
-            // Utilisation d'XMLHttpRequest pour calculer la progression réelle du téléchargement
             const xhr = new XMLHttpRequest();
             xhr.open('GET', rawUrl, true);
             xhr.responseType = 'blob';
@@ -199,7 +211,6 @@
                     const xhr = new XMLHttpRequest();
                     xhr.open('POST', 'https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), true);
 
-                    // Progression de l'envoi
                     xhr.upload.onprogress = (event) => {
                         if (event.lengthComputable) {
                             const percentComplete = (event.loaded / event.total) * 100;
@@ -212,12 +223,13 @@
                         if (xhr.status === 200) {
                             const fileUrl = xhr.responseText.trim();
                             if (fileUrl && fileUrl.startsWith('http')) {
-                                const shareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}`;
+                                currentShareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}`;
                                 
-                                qr.value = shareableUrl;
+                                qr.value = currentShareableUrl;
                                 qrcodeCanvas.style.display = 'inline-block';
                                 qrHelp.style.display = 'block';
-                                statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
+                                qrActions.style.display = 'block';
+                                statusDiv.innerText = "QR Code prêt ! Scanne-le ou partage-le.";
                             } else {
                                 statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
                             }
@@ -234,6 +246,31 @@
                     xhr.send(formData);
                 });
             }
+        });
+
+        // Bouton Partager le lien
+        shareLinkBtn.addEventListener('click', () => {
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Partage de fichier',
+                    text: 'Voici le fichier que je te partage :',
+                    url: currentShareableUrl
+                }).catch(() => {});
+            } else {
+                navigator.clipboard.writeText(currentShareableUrl);
+                alert("Lien copié dans le presse-papier !");
+            }
+        });
+
+        // Bouton Télécharger l'image du QR Code
+        downloadQrBtn.addEventListener('click', () => {
+            const qrImageUrl = qrcodeCanvas.toDataURL("image/png");
+            const a = document.createElement('a');
+            a.href = qrImageUrl;
+            a.download = "qrcode_partage.png";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         });
     }
 </script>
