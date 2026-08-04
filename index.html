@@ -41,12 +41,17 @@
         .btn { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px; text-decoration: none; display: inline-block; }
         .btn-success { background: #28a745; }
         .btn-secondary { background: #6c757d; }
+        .btn-danger { background: #dc3545; }
         
         #status { font-weight: bold; margin: 15px 0; color: var(--subtext-color); }
         img, video, iframe, audio { max-width: 100%; border-radius: 8px; margin-top: 15px; display: block; margin-left: auto; margin-right: auto; }
         iframe { width: 100%; height: 250px; border: none; }
         
         #fileInfo { margin-top: 15px; font-weight: bold; color: var(--text-color); word-break: break-all; }
+        .size-badge { font-size: 12px; color: var(--subtext-color); margin-top: 5px; font-weight: normal; }
+        .expiry-badge { display: inline-block; background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-top: 8px; font-weight: bold; }
+        body.dark-theme .expiry-badge { background: #332b00; color: #ffda6a; border-color: #665200; }
+        
         input[type="file"] { display: none; }
         
         .progress-container { width: 100%; background-color: var(--border-color); border-radius: 8px; overflow: hidden; margin: 15px 0; display: none; }
@@ -76,6 +81,7 @@
         <div id="progressBar" class="progress-bar"></div>
     </div>
     <div id="progressText">0%</div>
+    <button id="cancelUploadBtn" class="btn btn-danger" style="display:none; font-size:12px; padding:5px 10px;">Annuler l'envoi</button>
 
     <!-- Section Émetteur -->
     <div id="senderSection" style="display:none;">
@@ -83,6 +89,7 @@
             <span>Glisse des fichiers ici ou <strong>clique pour choisir</strong></span>
             <input type="file" id="fileInput" multiple>
         </div>
+        <div id="selectedSizeInfo" class="size-badge"></div>
 
         <div>
             <label for="timeSelect" class="option-label">Durée de validité du lien :</label>
@@ -103,14 +110,16 @@
         <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code.</p>
         
         <div id="qrActions" class="qr-actions">
-            <button id="shareLinkBtn" class="btn">Partager le lien</button>
-            <button id="downloadQrBtn" class="btn btn-secondary">Télécharger le QR Code</button>
+            <button id="copyLinkBtn" class="btn btn-secondary">Copier le lien</button>
+            <button id="shareLinkBtn" class="btn">Partager</button>
+            <button id="downloadQrBtn" class="btn btn-secondary">Télécharger QR</button>
         </div>
     </div>
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
         <div id="fileInfo"></div>
+        <div id="expiryBadge" class="expiry-badge" style="display:none;">⏱️ Lien temporaire Litterbox</div>
         
         <!-- Aperçus selon format -->
         <img id="previewImage" alt="Aperçu" style="display:none;">
@@ -147,6 +156,8 @@
     const decryptSection = document.getElementById('decryptSection');
     const qrcodeCanvas = document.getElementById('qrcode');
     const qrHelp = document.getElementById('qrHelp');
+    const selectedSizeInfo = document.getElementById('selectedSizeInfo');
+    const expiryBadge = document.getElementById('expiryBadge');
     
     const previewImage = document.getElementById('previewImage');
     const previewVideo = document.getElementById('previewVideo');
@@ -159,8 +170,10 @@
     const progressContainer = document.getElementById('progressContainer');
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
+    const cancelUploadBtn = document.getElementById('cancelUploadBtn');
 
     const qrActions = document.getElementById('qrActions');
+    const copyLinkBtn = document.getElementById('copyLinkBtn');
     const shareLinkBtn = document.getElementById('shareLinkBtn');
     const downloadQrBtn = document.getElementById('downloadQrBtn');
     const themeToggle = document.getElementById('themeToggle');
@@ -168,8 +181,17 @@
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
     let currentShareableUrl = "";
     let fileUploaded = false;
+    let activeXhr = null;
 
     const VALIDATION_PREFIX = "LORENZO_VALID_FILE::";
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Octet';
+        const k = 1024;
+        const sizes = ['Octets', 'Ko', 'Mo', 'Go'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
 
     themeToggle.addEventListener('click', () => {
         document.body.classList.toggle('dark-theme');
@@ -193,6 +215,7 @@
     function showProgress(percent) {
         progressContainer.style.display = 'block';
         progressText.style.display = 'block';
+        cancelUploadBtn.style.display = 'inline-block';
         progressBar.style.width = percent + '%';
         progressText.innerText = Math.round(percent) + '%';
     }
@@ -200,12 +223,24 @@
     function hideProgress() {
         progressContainer.style.display = 'none';
         progressText.style.display = 'none';
+        cancelUploadBtn.style.display = 'none';
         progressBar.style.width = '0%';
     }
+
+    cancelUploadBtn.addEventListener('click', () => {
+        if (activeXhr) {
+            activeXhr.abort();
+            activeXhr = null;
+            hideProgress();
+            statusDiv.innerText = "Envoi annulé par l'utilisateur.";
+        }
+    });
 
     async function processFiles(files) {
         let totalSize = 0;
         for (let f of files) totalSize += f.size;
+
+        selectedSizeInfo.innerText = "Taille totale : " + formatBytes(totalSize) + " / 1 Go max";
 
         if (totalSize > 1073741824) {
             alert("Erreur : La taille totale dépasse la limite maximale de 1 Go.");
@@ -261,7 +296,7 @@
     }
 
     function uploadFile(blob, fileName, isEncrypted) {
-        statusDiv.innerText = "Envoi du fichier en cours...";
+        statusDiv.innerText = `Envoi du fichier en cours (${formatBytes(blob.size)})...`;
         showProgress(0);
 
         const selectedTime = timeSelect.value;
@@ -273,6 +308,7 @@
         formData.append('fileToUpload', blob, fileName);
 
         const xhr = new XMLHttpRequest();
+        activeXhr = xhr;
         xhr.open('POST', 'https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), true);
 
         xhr.upload.onprogress = (event) => {
@@ -283,6 +319,7 @@
 
         xhr.onload = () => {
             hideProgress();
+            activeXhr = null;
             if (xhr.status === 200) {
                 const fileUrl = xhr.responseText.trim();
                 if (fileUrl && fileUrl.startsWith('http')) {
@@ -305,6 +342,7 @@
 
         xhr.onerror = () => {
             hideProgress();
+            activeXhr = null;
             statusDiv.innerText = "Erreur de connexion.";
         };
 
@@ -316,6 +354,7 @@
         receiverSection.style.display = 'block';
         statusDiv.innerText = "Fichier prêt au visionnage / téléchargement.";
         fileInfo.innerText = "Fichier : " + fileNameParam;
+        expiryBadge.style.display = 'inline-block';
 
         const rawUrl = decodeURIComponent(fileUrlParam);
 
@@ -348,6 +387,7 @@
             showProgress(0);
 
             const xhr = new XMLHttpRequest();
+            activeXhr = xhr;
             xhr.open('GET', rawUrl, true);
             if (isEncryptedParam) xhr.responseType = 'text';
             else xhr.responseType = 'blob';
@@ -358,6 +398,7 @@
 
             xhr.onload = () => {
                 hideProgress();
+                activeXhr = null;
                 if (xhr.status === 200) {
                     if (isEncryptedParam) {
                         try {
@@ -394,6 +435,7 @@
 
             xhr.onerror = () => {
                 hideProgress();
+                activeXhr = null;
                 statusDiv.innerText = "Erreur réseau.";
                 downloadBtn.style.display = 'inline-block';
             };
@@ -415,7 +457,7 @@
         }
 
     } else {
-        statusDiv.innerText = "Sélectionne un fichier à partager maximum 1 Gb.";
+        statusDiv.innerText = "Sélectionne un fichier à partager (maximum 1 Go).";
         senderSection.style.display = 'block';
 
         dropZone.addEventListener('click', () => fileInput.click());
@@ -435,6 +477,14 @@
 
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) processFiles(e.target.files);
+        });
+
+        copyLinkBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(currentShareableUrl).then(() => {
+                alert("Lien copié dans le presse-papier !");
+            }).catch(() => {
+                alert("Impossible de copier automatiquement.");
+            });
         });
 
         shareLinkBtn.addEventListener('click', () => {
