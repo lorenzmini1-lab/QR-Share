@@ -258,7 +258,7 @@
                                 qrcodeCanvas.style.display = 'inline-block';
                                 qrHelp.style.display = 'block';
                                 qrActions.style.display = 'block';
-                                statusDiv.innerText = "QR Code prêt ! Scanne-le ou partage-le.";
+                                statusDiv.innerHTML = "QR Code prêt ! Scanne-le ou partage-le.<br><br>Le Qr code est valide pendant 1 heure !!!";
                             } else {
                                 statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
                             }
