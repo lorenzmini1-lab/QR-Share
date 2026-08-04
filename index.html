@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Photo Direct</title>
+    <title>Partage Photo Universal</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
@@ -18,7 +18,7 @@
 <body>
 
 <div class="card">
-    <h2>Partage Photo Direct</h2>
+    <h2>Partage Photo Universal</h2>
     <div id="status">Chargement...</div>
 
     <!-- Section Émetteur -->
@@ -40,7 +40,7 @@
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const rawImgData = urlParams.get('img');
+    const photoIdParam = urlParams.get('id');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -51,9 +51,12 @@
     const receivedImage = document.getElementById('receivedImage');
     const downloadBtn = document.getElementById('downloadBtn');
 
-    const qr = new QRious({ element: qrcodeCanvas, size: 280, level: 'L' });
+    const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
 
-    function compressForQR(file, callback) {
+    // Endpoint d'API libre pour l'échange de clés temporaires
+    const API_URL = "https://file-relay.vercel.app/api";
+
+    function compressImage(file, callback) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = (e) => {
@@ -61,36 +64,40 @@
             img.src = e.target.result;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let max = 180; // Petite résolution pour tenir dans le QR code
+                let max = 800; // Très bonne qualité
                 let w = img.width, h = img.height;
                 if (w > h) { if (w > max) { h *= max / w; w = max; } }
                 else { if (h > max) { w *= max / h; h = max; } }
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                
-                // Utilisation du WebP/JPEG fortement compressé
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.25);
-                callback(compressedDataUrl);
+                callback(canvas.toDataURL('image/jpeg', 0.6));
             };
         };
     }
 
-    if (rawImgData) {
+    if (photoIdParam) {
         // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        
-        try {
-            const fullImageSrc = decodeURIComponent(rawImgData);
-            receivedImage.src = fullImageSrc;
+        statusDiv.innerText = "Récupération de la photo...";
+
+        fetch(`https://tmpfiles.org/api/v1/dl/${photoIdParam}`)
+        .then(res => {
+            if (!res.ok) throw new Error();
+            return res.blob();
+        })
+        .then(blob => {
+            const imgUrl = URL.createObjectURL(blob);
+            receivedImage.src = imgUrl;
             receivedImage.style.display = 'block';
-            downloadBtn.href = fullImageSrc;
+            downloadBtn.href = imgUrl;
             downloadBtn.style.display = 'inline-block';
             statusDiv.innerText = "Photo reçue avec succès !";
-        } catch (e) {
-            statusDiv.innerText = "Erreur lors du décodage de l'image.";
-        }
+        })
+        .catch(() => {
+            statusDiv.innerText = "Erreur de chargement ou lien expiré.";
+        });
 
     } else {
         // MODE ÉMETTEUR
@@ -100,20 +107,42 @@
         photoInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
-                statusDiv.innerText = "Génération du QR Code...";
+                statusDiv.innerText = "Optimisation de la photo...";
 
-                compressForQR(file, (dataUrl) => {
-                    const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(dataUrl)}`;
-                    
-                    if (shareableUrl.length > 2500) {
-                        statusDiv.innerText = "L'image est trop grande pour tenir dans un QR Code.";
-                        return;
-                    }
+                compressImage(file, (base64Data) => {
+                    statusDiv.innerText = "Envoi de la photo (5G/Wi-Fi)...";
 
-                    qr.value = shareableUrl;
-                    qrcodeCanvas.style.display = 'inline-block';
-                    qrHelp.style.display = 'block';
-                    statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
+                    fetch(base64Data)
+                    .then(res => res.blob())
+                    .then(blob => {
+                        const formData = new FormData();
+                        formData.append('file', blob, 'photo.jpg');
+
+                        return fetch('https://tmpfiles.org/api/v1/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.data && data.data.url) {
+                            // Extrait l'identifiant unique du fichier
+                            const rawUrl = data.data.url;
+                            const fileId = rawUrl.split('tmpfiles.org/')[1];
+                            
+                            const shareableUrl = `${window.location.origin}${window.location.pathname}?id=${fileId}`;
+                            
+                            qr.value = shareableUrl;
+                            qrcodeCanvas.style.display = 'inline-block';
+                            qrHelp.style.display = 'block';
+                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
+                        } else {
+                            statusDiv.innerText = "Erreur lors du transfert de la photo.";
+                        }
+                    })
+                    .catch(() => {
+                        statusDiv.innerText = "Erreur de connexion.";
+                    });
                 });
             }
         });
