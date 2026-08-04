@@ -27,14 +27,16 @@
         <label for="photoInput" class="btn">Sélectionner une photo</label>
         <input type="file" id="photoInput" accept="image/*">
         <br>
+        <button id="sendBtn" class="btn btn-success" style="display:none;">Envoyer la photo</button>
+        <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
         <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
     </div>
 
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
-        <p id="recvHelp">En attente de la réception...</p>
-        <img id="receivedImage" alt="Photo reçue">
+        <p id="recvHelp">En attente de l'envoi depuis l'émetteur...</p>
+        <img id="receivedImage" alt="" style="display:none;">
         <br>
         <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
     </div>
@@ -48,6 +50,7 @@
     const senderSection = document.getElementById('senderSection');
     const receiverSection = document.getElementById('receiverSection');
     const photoInput = document.getElementById('photoInput');
+    const sendBtn = document.getElementById('sendBtn');
     const qrcodeCanvas = document.getElementById('qrcode');
     const qrHelp = document.getElementById('qrHelp');
     const receivedImage = document.getElementById('receivedImage');
@@ -59,7 +62,6 @@
     const qr = new QRious({ element: qrcodeCanvas, size: 250 });
     const peer = new Peer();
 
-    // Redimensionner la photo
     function compressImage(file, maxWidth, maxHeight, quality, callback) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -85,7 +87,7 @@
 
                 canvas.width = width;
                 canvas.height = height;
-                const ctx = canvas.getContext('2d'); // Correction ici (2d à la place de canvas)
+                const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
                 callback(canvas.toDataURL('image/jpeg', quality));
             };
@@ -95,24 +97,21 @@
     peer.on('open', (id) => {
         if (targetPeerId) {
             // MODE RÉCEPTEUR
-            statusDiv.innerText = "Mode Récepteur : Connexion en cours...";
+            statusDiv.innerText = "Mode Récepteur : Connexion établie !";
             receiverSection.style.display = 'block';
 
-            const conn = peer.connect(targetPeerId, { reliable: true });
+            const conn = peer.connect(targetPeerId);
             
             conn.on('open', () => {
-                statusDiv.innerText = "Connecté ! Transfert de la photo...";
+                statusDiv.innerText = "Connecté à l'émetteur ! En attente de l'envoi...";
             });
 
             conn.on('data', (data) => {
                 receivedImage.src = data;
+                receivedImage.style.display = 'inline-block';
                 downloadBtn.href = data;
                 downloadBtn.style.display = 'inline-block';
                 statusDiv.innerText = "Photo reçue avec succès !";
-            });
-
-            conn.on('error', () => {
-                statusDiv.innerText = "Erreur de connexion.";
             });
 
         } else {
@@ -125,13 +124,11 @@
 
             peer.on('connection', (conn) => {
                 currentConnection = conn;
-                statusDiv.innerText = "Appareil récepteur connecté !";
-
+                
                 conn.on('open', () => {
+                    statusDiv.innerText = "Appareil récepteur connecté et prêt !";
                     if (selectedImageData) {
-                        statusDiv.innerText = "Envoi de la photo en cours...";
-                        conn.send(selectedImageData);
-                        statusDiv.innerText = "Photo envoyée !";
+                        sendBtn.style.display = 'inline-block';
                     }
                 });
             });
@@ -141,21 +138,28 @@
     photoInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
-            statusDiv.innerText = "Optimisation de l'image...";
+            statusDiv.innerText = "Traitement de la photo...";
             
-            compressImage(file, 1000, 1000, 0.6, (base64Img) => {
+            compressImage(file, 800, 800, 0.6, (base64Img) => {
                 selectedImageData = base64Img;
                 qrcodeCanvas.style.display = 'inline-block';
                 qrHelp.style.display = 'block';
 
                 if (currentConnection && currentConnection.open) {
-                    statusDiv.innerText = "Envoi de la photo...";
-                    currentConnection.send(selectedImageData);
-                    statusDiv.innerText = "Photo envoyée !";
+                    sendBtn.style.display = 'inline-block';
+                    statusDiv.innerText = "Appareil connecté ! Clique sur 'Envoyer la photo'.";
                 } else {
-                    statusDiv.innerText = "Scanne le QR code pour envoyer la photo.";
+                    statusDiv.innerText = "Scanne le QR code pour connecter le récepteur.";
                 }
             });
+        }
+    });
+
+    sendBtn.addEventListener('click', () => {
+        if (currentConnection && selectedImageData) {
+            statusDiv.innerText = "Envoi en cours...";
+            currentConnection.send(selectedImageData);
+            statusDiv.innerText = "Photo envoyée !";
         }
     });
 </script>
