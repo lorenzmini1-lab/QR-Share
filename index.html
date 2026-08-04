@@ -59,7 +59,7 @@
     const qr = new QRious({ element: qrcodeCanvas, size: 250 });
     const peer = new Peer();
 
-    // Redimensionner la photo pour éviter les blocages de transfert
+    // Redimensionner la photo
     function compressImage(file, maxWidth, maxHeight, quality, callback) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -73,19 +73,19 @@
 
                 if (width > height) {
                     if (width > maxWidth) {
-                        height = Math.round((height *= maxWidth / width));
+                        height = Math.round((height * maxWidth) / width);
                         width = maxWidth;
                     }
                 } else {
                     if (height > maxHeight) {
-                        width = Math.round((width *= maxHeight / height));
+                        width = Math.round((width * maxHeight) / height);
                         height = maxHeight;
                     }
                 }
 
                 canvas.width = width;
                 canvas.height = height;
-                const ctx = canvas.getContext('canvas');
+                const ctx = canvas.getContext('2d'); // Correction ici (2d à la place de canvas)
                 ctx.drawImage(img, 0, 0, width, height);
                 callback(canvas.toDataURL('image/jpeg', quality));
             };
@@ -111,7 +111,7 @@
                 statusDiv.innerText = "Photo reçue avec succès !";
             });
 
-            conn.on('error', (err) => {
+            conn.on('error', () => {
                 statusDiv.innerText = "Erreur de connexion.";
             });
 
@@ -143,8 +143,7 @@
         if (file) {
             statusDiv.innerText = "Optimisation de l'image...";
             
-            // Compression à 1200px max pour garantir le transfert
-            compressImage(file, 1200, 1200, 0.7, (base64Img) => {
+            compressImage(file, 1000, 1000, 0.6, (base64Img) => {
                 selectedImageData = base64Img;
                 qrcodeCanvas.style.display = 'inline-block';
                 qrHelp.style.display = 'block';
