@@ -54,9 +54,11 @@
         #progressText { font-size: 13px; font-weight: bold; color: var(--text-color); margin-top: 5px; display: none; }
 
         .qr-actions { margin-top: 15px; display: none; }
-        .pass-input { width: 80%; padding: 8px; margin: 10px 0; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-color); text-align: center; }
+        .pass-input, .select-input { width: 80%; padding: 8px; margin: 5px 0; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-color); text-align: center; }
         .pass-warning { font-size: 12px; color: #d9534f; margin-top: 2px; display: none; font-weight: bold; }
         .footer-signature { position: absolute; bottom: 10px; left: 0; right: 0; font-size: 12px; color: #888; font-style: italic; }
+        
+        .option-label { font-size: 13px; font-weight: bold; color: var(--subtext-color); margin-top: 10px; display: block; }
     </style>
 </head>
 <body>
@@ -83,8 +85,18 @@
         </div>
 
         <div>
+            <label for="timeSelect" class="option-label">Durée de validité du lien :</label>
+            <select id="timeSelect" class="select-input">
+                <option value="1h">1 heure</option>
+                <option value="12h">12 heures</option>
+                <option value="24h">24 heures (1 jour)</option>
+                <option value="72h" selected>3 jours (72 heures)</option>
+            </select>
+        </div>
+
+        <div>
             <input type="password" id="encryptPassword" class="pass-input" placeholder="Mot de passe optionnel">
-            <div id="passWarning" class="pass-warning">💡 Resélectionne ou glisse à nouveau ton fichier pour appliquer ce mot de passe !</div>
+            <div id="passWarning" class="pass-warning">💡 Resélectionne ou glisse à nouveau ton fichier pour appliquer les modifications !</div>
         </div>
 
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
@@ -114,7 +126,7 @@
         <button id="downloadBtn" class="btn btn-success" style="display:none;">Télécharger le fichier</button>
     </div>
 
-    <div class="footer-signature">By Lorenzo.</div>
+    <div class="footer-signature">By Lorenzo</div>
 </div>
 
 <script>
@@ -128,6 +140,7 @@
     const receiverSection = document.getElementById('receiverSection');
     const fileInput = document.getElementById('fileInput');
     const dropZone = document.getElementById('dropZone');
+    const timeSelect = document.getElementById('timeSelect');
     const encryptPassword = document.getElementById('encryptPassword');
     const passWarning = document.getElementById('passWarning');
     const decryptPassword = document.getElementById('decryptPassword');
@@ -154,7 +167,7 @@
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
     let currentShareableUrl = "";
-    let fileUploaded = false; // Variable qui retient si un fichier a déjà été généré
+    let fileUploaded = false;
 
     const VALIDATION_PREFIX = "LORENZO_VALID_FILE::";
 
@@ -163,19 +176,19 @@
         themeToggle.innerText = document.body.classList.contains('dark-theme') ? '☀️' : '🌙';
     });
 
-    // Masquer le QR code et afficher l'avertissement UNIQUEMENT si un fichier avait déjà été soumis
-    function handlePasswordClick() {
+    function resetOutputState() {
         if (fileUploaded) {
             qrcodeCanvas.style.display = 'none';
             qrHelp.style.display = 'none';
             qrActions.style.display = 'none';
             passWarning.style.display = 'block';
-            statusDiv.innerText = "Mot de passe en cours de saisie : sélectionne ou glisse ton fichier à nouveau.";
+            statusDiv.innerText = "Paramètres modifiés : sélectionne ou glisse ton fichier à nouveau pour générer un nouveau QR Code.";
         }
     }
 
-    encryptPassword.addEventListener('focus', handlePasswordClick);
-    encryptPassword.addEventListener('input', handlePasswordClick);
+    encryptPassword.addEventListener('focus', resetOutputState);
+    encryptPassword.addEventListener('input', resetOutputState);
+    timeSelect.addEventListener('change', resetOutputState);
 
     function showProgress(percent) {
         progressContainer.style.display = 'block';
@@ -251,9 +264,12 @@
         statusDiv.innerText = "Envoi du fichier en cours...";
         showProgress(0);
 
+        const selectedTime = timeSelect.value;
+        const selectedTimeText = timeSelect.options[timeSelect.selectedIndex].text;
+
         const formData = new FormData();
         formData.append('reqtype', 'fileupload');
-        formData.append('time', '1h');
+        formData.append('time', selectedTime);
         formData.append('fileToUpload', blob, fileName);
 
         const xhr = new XMLHttpRequest();
@@ -272,13 +288,13 @@
                 if (fileUrl && fileUrl.startsWith('http')) {
                     currentShareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}&enc=${isEncrypted ? '1' : '0'}`;
                     
-                    fileUploaded = true; // On enregistre qu'un fichier est bien déposé
+                    fileUploaded = true;
                     qr.value = currentShareableUrl;
                     qrcodeCanvas.style.display = 'inline-block';
                     qrHelp.style.display = 'block';
                     qrActions.style.display = 'block';
                     passWarning.style.display = 'none';
-                    statusDiv.innerHTML = "QR Code prêt ! Scanne-le ou partage-le.<br><br>Le Qr code est valide pendant 1 heure !!!";
+                    statusDiv.innerHTML = `QR Code prêt ! Scanne-le ou partage-le.<br><br>Le QR code est valide pendant ${selectedTimeText} !!!`;
                 } else {
                     statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
                 }
@@ -298,7 +314,7 @@
     if (fileUrlParam) {
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Fichier prêt au téléchargement, attention la page est valide pendant 1 heure.";
+        statusDiv.innerText = "Fichier prêt au visionnage / téléchargement.";
         fileInfo.innerText = "Fichier : " + fileNameParam;
 
         const rawUrl = decodeURIComponent(fileUrlParam);
