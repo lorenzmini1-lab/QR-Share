@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Partage Photo Universal</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
         .card { background: white; padding: 20px; border-radius: 12px; max-width: 400px; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
@@ -19,7 +20,7 @@
 
 <div class="card">
     <h2>Partage Photo Universal</h2>
-    <div id="status">Chargement...</div>
+    <div id="status">Initialisation du réseau...</div>
 
     <!-- Section Émetteur -->
     <div id="senderSection" style="display:none;">
@@ -27,7 +28,7 @@
         <input type="file" id="photoInput" accept="image/*">
         <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
-        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone.</p>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec l'autre téléphone (4G ou Wi-Fi).</p>
     </div>
 
     <!-- Section Récepteur -->
@@ -40,7 +41,7 @@
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const imgUrlParam = urlParams.get('img');
+    const targetPeerId = urlParams.get('p');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -51,7 +52,21 @@
     const receivedImage = document.getElementById('receivedImage');
     const downloadBtn = document.getElementById('downloadBtn');
 
+    let activeConnection = null;
+    let preparedImageBase64 = null;
+
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
+
+    // Serveurs STUN publics pour passer les pare-feux 4G/5G
+    const peer = new Peer({
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+        }
+    });
 
     function compressImage(file, callback) {
         const reader = new FileReader();
@@ -61,81 +76,87 @@
             img.src = e.target.result;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let max = 800;
+                let max = 600;
                 let w = img.width, h = img.height;
                 if (w > h) { if (w > max) { h *= max / w; w = max; } }
                 else { if (h > max) { w *= max / h; h = max; } }
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                canvas.toBlob((blob) => {
-                    callback(blob);
-                }, 'image/jpeg', 0.7);
+                callback(canvas.toDataURL('image/jpeg', 0.5));
             };
         };
     }
 
-    if (imgUrlParam) {
-        // MODE RÉCEPTEUR
-        senderSection.style.display = 'none';
-        receiverSection.style.display = 'block';
-        statusDiv.innerText = "Chargement de la photo...";
-
-        const finalUrl = decodeURIComponent(imgUrlParam);
-
-        receivedImage.onload = () => {
-            statusDiv.innerText = "Photo reçue avec succès !";
-            downloadBtn.style.display = 'inline-block';
-        };
-
-        receivedImage.onerror = () => {
-            statusDiv.innerText = "Erreur de chargement. Le lien a peut-être expiré.";
-        };
-
-        receivedImage.src = finalUrl;
-        receivedImage.style.display = 'block';
-        downloadBtn.href = finalUrl;
-
-    } else {
-        // MODE ÉMETTEUR
-        statusDiv.innerText = "Sélectionne une photo à partager.";
-        senderSection.style.display = 'block';
-
-        photoInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                statusDiv.innerText = "Optimisation de la photo...";
-
-                compressImage(file, (compressedBlob) => {
-                    statusDiv.innerText = "Génération du lien de transfert...";
-
-                    const formData = new FormData();
-                    formData.append('file', compressedBlob, 'photo.jpg');
-
-                    fetch('https://file.io', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success && data.link) {
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(data.link)}`;
-                            
-                            qr.value = shareableUrl;
-                            qrcodeCanvas.style.display = 'inline-block';
-                            qrHelp.style.display = 'block';
-                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
-                        } else {
-                            statusDiv.innerText = "Erreur lors de l'envoi de la photo.";
-                        }
-                    })
-                    .catch(() => {
-                        statusDiv.innerText = "Erreur de connexion.";
-                    });
-                });
-            }
-        });
+    function sendImageData() {
+        if (activeConnection && preparedImageBase64) {
+            statusDiv.innerText = "Envoi de la photo en cours...";
+            activeConnection.send(preparedImageBase64);
+            statusDiv.innerText = "Photo transmise avec succès !";
+        }
     }
+
+    peer.on('open', (id) => {
+        if (targetPeerId) {
+            // MODE RÉCEPTEUR
+            senderSection.style.display = 'none';
+            receiverSection.style.display = 'block';
+            statusDiv.innerText = "Connexion à l'émetteur...";
+
+            const conn = peer.connect(targetPeerId);
+
+            conn.on('open', () => {
+                statusDiv.innerText = "Connecté ! En attente de l'image...";
+            });
+
+            conn.on('data', (data) => {
+                receivedImage.src = data;
+                receivedImage.style.display = 'block';
+                downloadBtn.href = data;
+                downloadBtn.style.display = 'inline-block';
+                statusDiv.innerText = "Photo reçue avec succès !";
+            });
+
+            conn.on('error', () => {
+                statusDiv.innerText = "Erreur de connexion entre les deux téléphones.";
+            });
+
+        } else {
+            // MODE ÉMETTEUR
+            statusDiv.innerText = "Sélectionne une photo à partager.";
+            senderSection.style.display = 'block';
+
+            const shareableUrl = `${window.location.origin}${window.location.pathname}?p=${id}`;
+            qr.value = shareableUrl;
+
+            peer.on('connection', (conn) => {
+                activeConnection = conn;
+                statusDiv.innerText = "Récepteur connecté !";
+
+                conn.on('open', () => {
+                    sendImageData();
+                });
+            });
+        }
+    });
+
+    peer.on('error', () => {
+        statusDiv.innerText = "Erreur du réseau P2P.";
+    });
+
+    photoInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            statusDiv.innerText = "Préparation de l'image...";
+            compressImage(file, (base64) => {
+                preparedImageBase64 = base64;
+                qrcodeCanvas.style.display = 'inline-block';
+                qrHelp.style.display = 'block';
+                statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
+                sendImageData();
+            });
+        }
+    });
 </script>
 
 </body>
