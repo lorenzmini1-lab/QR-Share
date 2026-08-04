@@ -116,7 +116,6 @@
 </div>
 
 <script>
-    // ÉLÉMENTS DOM
     const urlParams = new URLSearchParams(window.location.search);
     const fileUrlParam = urlParams.get('url');
     const fileNameParam = urlParams.get('name') || "fichier_recu";
@@ -153,7 +152,8 @@
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
     let currentShareableUrl = "";
 
-    // GESTION DU THÈME
+    const VALIDATION_PREFIX = "LORENZO_VALID_FILE::";
+
     themeToggle.addEventListener('click', () => {
         document.body.classList.toggle('dark-theme');
         themeToggle.innerText = document.body.classList.contains('dark-theme') ? '☀️' : '🌙';
@@ -172,12 +172,11 @@
         progressBar.style.width = '0%';
     }
 
-    // TRAITEMENT MULTI-FICHIERS ET CONVERSION
     async function processFiles(files) {
         let totalSize = 0;
         for (let f of files) totalSize += f.size;
 
-        if (totalSize > 1073741824) { // 1 Go
+        if (totalSize > 1073741824) {
             alert("Erreur : La taille totale dépasse la limite maximale de 1 Go.");
             return;
         }
@@ -211,23 +210,26 @@
             }
         }
 
-        // CHIFFREMENT ÉVENTUEL
         const password = encryptPassword.value.trim();
         let isEncrypted = false;
 
         if (password) {
             statusDiv.innerText = "Chiffrement du fichier...";
-            const arrayBuffer = await finalBlob.arrayBuffer();
-            const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer);
-            const encrypted = CryptoJS.AES.encrypt(wordArray, password).toString();
-            finalBlob = new Blob([encrypted], { type: 'text/plain' });
-            isEncrypted = true;
+            const reader = new FileReader();
+            reader.readAsDataURL(finalBlob);
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                const payload = VALIDATION_PREFIX + dataUrl;
+                const encrypted = CryptoJS.AES.encrypt(payload, password).toString();
+                const encryptedBlob = new Blob([encrypted], { type: 'text/plain' });
+                uploadFile(encryptedBlob, finalName, true);
+            };
+            return;
         }
 
-        uploadFile(finalBlob, finalName, isEncrypted);
+        uploadFile(finalBlob, finalName, false);
     }
 
-    // ENVOI SERVEUR
     function uploadFile(blob, fileName, isEncrypted) {
         statusDiv.innerText = "Envoi du fichier en cours...";
         showProgress(0);
@@ -274,7 +276,6 @@
         xhr.send(formData);
     }
 
-    // MODE RÉCEPTEUR
     if (fileUrlParam) {
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
@@ -286,7 +287,6 @@
         if (isEncryptedParam) {
             decryptSection.style.display = 'block';
         } else {
-            // Aperçus directs pour fichiers non chiffrés
             if (fileNameParam.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
                 previewImage.src = rawUrl; previewImage.style.display = 'block';
             } else if (fileNameParam.match(/\.(mp4|webm|ogg)$/i)) {
@@ -301,6 +301,13 @@
         downloadBtn.style.display = 'inline-block';
 
         downloadBtn.addEventListener('click', () => {
+            const pass = decryptPassword.value.trim();
+
+            if (isEncryptedParam && !pass) {
+                alert("Veuillez saisir le mot de passe.");
+                return;
+            }
+
             statusDiv.innerText = "Téléchargement en cours...";
             downloadBtn.style.display = 'none';
             showProgress(0);
@@ -318,26 +325,27 @@
                 hideProgress();
                 if (xhr.status === 200) {
                     if (isEncryptedParam) {
-                        const pass = decryptPassword.value.trim();
-                        if (!pass) {
-                            alert("Veuillez saisir le mot de passe.");
-                            downloadBtn.style.display = 'inline-block';
-                            return;
-                        }
                         try {
-                            const decrypted = CryptoJS.AES.decrypt(xhr.responseText, pass);
-                            const typedArray = CryptoJS.enc.Base64.parse(CryptoJS.enc.Base64.stringify(decrypted));
-                            const bytes = new Uint8Array(typedArray.words.length * 4);
-                            for (let i = 0; i < typedArray.words.length; i++) {
-                                bytes[i * 4] = (typedArray.words[i] >> 24) & 0xff;
-                                bytes[i * 4 + 1] = (typedArray.words[i] >> 16) & 0xff;
-                                bytes[i * 4 + 2] = (typedArray.words[i] >> 8) & 0xff;
-                                bytes[i * 4 + 3] = typedArray.words[i] & 0xff;
+                            const decryptedBytes = CryptoJS.AES.decrypt(xhr.responseText, pass);
+                            const decryptedText = decryptedBytes.toString(CryptoJS.enc.Utf8);
+
+                            if (!decryptedText || !decryptedText.startsWith(VALIDATION_PREFIX)) {
+                                alert("Mot de passe incorrect !");
+                                statusDiv.innerText = "Mot de passe incorrect. Réessaye.";
+                                downloadBtn.style.display = 'inline-block';
+                                return;
                             }
-                            const blob = new Blob([bytes]);
-                            triggerDownload(blob, fileNameParam);
+
+                            const dataUrl = decryptedText.replace(VALIDATION_PREFIX, '');
+                            const fetchRes = fetch(dataUrl)
+                                .then(res => res.blob())
+                                .then(blob => {
+                                    triggerDownload(blob, fileNameParam);
+                                });
+
                         } catch (err) {
-                            alert("Mot de passe incorrect ou fichier corrompu.");
+                            alert("Mot de passe incorrect !");
+                            statusDiv.innerText = "Mot de passe incorrect. Réessaye.";
                             downloadBtn.style.display = 'inline-block';
                         }
                     } else {
@@ -372,7 +380,6 @@
         }
 
     } else {
-        // MODE ÉMETTEUR
         statusDiv.innerText = "Sélectionne un fichier à partager maximum 1 Gb.";
         senderSection.style.display = 'block';
 
