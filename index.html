@@ -39,7 +39,7 @@
 
     <!-- Section Émetteur -->
     <div id="senderSection" style="display:none;">
-        <label for="fileInput" class="btn">Sélectionne un fichier maximum 1 Gb</label>
+        <label for="fileInput" class="btn">Sélectionne un fichier</label>
         <input type="file" id="fileInput">
         <br>
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
@@ -220,7 +220,7 @@
 
     } else {
         // MODE ÉMETTEUR
-        statusDiv.innerText = "Sélectionne un fichier à partager.";
+        statusDiv.innerText = "Sélectionne un fichier à partager maximum 1 Gb.";
         senderSection.style.display = 'block';
 
         fileInput.addEventListener('change', (e) => {
