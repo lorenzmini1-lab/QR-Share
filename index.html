@@ -3,34 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partage Fichier</title>
+    <title>Partage Fichier Pro</title>
+    <!-- QR Code -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-    <!-- Convertisseur HEIC vers JPEG -->
+    <!-- Convertisseur HEIC -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
+    <!-- Compression Multi-fichiers ZIP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Chiffrement AES -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
-        .card { background: white; padding: 20px; border-radius: 12px; max-width: 400px; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); position: relative; padding-bottom: 40px; }
+        :root {
+            --bg-color: #f4f4f9;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --subtext-color: #555555;
+            --border-color: #e0e0e0;
+        }
+
+        body.dark-theme {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --subtext-color: #aaa;
+            --border-color: #333;
+        }
+
+        body { font-family: Arial, sans-serif; background: var(--bg-color); color: var(--text-color); padding: 20px; text-align: center; transition: background 0.3s; }
+        .card { background: var(--card-bg); padding: 20px; border-radius: 12px; max-width: 450px; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.15); position: relative; padding-bottom: 45px; transition: background 0.3s; }
+        
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .theme-toggle { background: none; border: 1px solid var(--border-color); color: var(--text-color); padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+
+        .drop-zone { border: 2px dashed #007bff; border-radius: 8px; padding: 25px; margin: 15px 0; background: rgba(0, 123, 255, 0.05); cursor: pointer; transition: 0.2s; }
+        .drop-zone.dragover { background: rgba(0, 123, 255, 0.15); border-color: #0056b3; }
+
         .btn { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px; text-decoration: none; display: inline-block; }
         .btn-success { background: #28a745; }
         .btn-secondary { background: #6c757d; }
-        #status { font-weight: bold; margin: 15px 0; color: #555; }
-        img { max-width: 100%; border-radius: 8px; margin-top: 15px; display: block; margin-left: auto; margin-right: auto; }
-        #fileInfo { margin-top: 15px; font-weight: bold; color: #333; word-break: break-all; }
+        
+        #status { font-weight: bold; margin: 15px 0; color: var(--subtext-color); }
+        img, video, iframe, audio { max-width: 100%; border-radius: 8px; margin-top: 15px; display: block; margin-left: auto; margin-right: auto; }
+        iframe { width: 100%; height: 250px; border: none; }
+        
+        #fileInfo { margin-top: 15px; font-weight: bold; color: var(--text-color); word-break: break-all; }
         input[type="file"] { display: none; }
         
-        .progress-container { width: 100%; background-color: #e0e0e0; border-radius: 8px; overflow: hidden; margin: 15px 0; display: none; }
+        .progress-container { width: 100%; background-color: var(--border-color); border-radius: 8px; overflow: hidden; margin: 15px 0; display: none; }
         .progress-bar { width: 0%; height: 20px; background-color: #28a745; transition: width 0.2s ease; }
-        #progressText { font-size: 13px; font-weight: bold; color: #333; margin-top: 5px; display: none; }
+        #progressText { font-size: 13px; font-weight: bold; color: var(--text-color); margin-top: 5px; display: none; }
 
         .qr-actions { margin-top: 15px; display: none; }
-        
+        .pass-input { width: 80%; padding: 8px; margin: 10px 0; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-color); text-align: center; }
         .footer-signature { position: absolute; bottom: 10px; left: 0; right: 0; font-size: 12px; color: #888; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>Partage Fichier</h2>
+    <div class="top-bar">
+        <h2 style="margin:0;">Partage Fichier</h2>
+        <button id="themeToggle" class="theme-toggle">🌙</button>
+    </div>
+
     <div id="status">Chargement...</div>
 
     <!-- Barre de progression -->
@@ -41,13 +76,18 @@
 
     <!-- Section Émetteur -->
     <div id="senderSection" style="display:none;">
-        <label for="fileInput" class="btn">Sélectionne un fichier</label>
-        <input type="file" id="fileInput">
-        <br>
+        <div id="dropZone" class="drop-zone">
+            <span>Glisse des fichiers ici ou <strong>clique pour choisir</strong></span>
+            <input type="file" id="fileInput" multiple>
+        </div>
+
+        <div>
+            <input type="password" id="encryptPassword" class="pass-input" placeholder="Mot de passe optionnel">
+        </div>
+
         <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
         <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code.</p>
         
-        <!-- Actions pour le QR Code -->
         <div id="qrActions" class="qr-actions">
             <button id="shareLinkBtn" class="btn">Partager le lien</button>
             <button id="downloadQrBtn" class="btn btn-secondary">Télécharger le QR Code</button>
@@ -57,7 +97,17 @@
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
         <div id="fileInfo"></div>
+        
+        <!-- Aperçus selon format -->
         <img id="previewImage" alt="Aperçu" style="display:none;">
+        <video id="previewVideo" controls style="display:none;"></video>
+        <audio id="previewAudio" controls style="display:none;"></audio>
+        <iframe id="previewPdf" style="display:none;"></iframe>
+
+        <div id="decryptSection" style="display:none;">
+            <input type="password" id="decryptPassword" class="pass-input" placeholder="Entrez le mot de passe">
+        </div>
+        
         <br>
         <button id="downloadBtn" class="btn btn-success" style="display:none;">Télécharger le fichier</button>
     </div>
@@ -66,17 +116,28 @@
 </div>
 
 <script>
+    // ÉLÉMENTS DOM
     const urlParams = new URLSearchParams(window.location.search);
     const fileUrlParam = urlParams.get('url');
     const fileNameParam = urlParams.get('name') || "fichier_recu";
+    const isEncryptedParam = urlParams.get('enc') === '1';
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
     const receiverSection = document.getElementById('receiverSection');
     const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const encryptPassword = document.getElementById('encryptPassword');
+    const decryptPassword = document.getElementById('decryptPassword');
+    const decryptSection = document.getElementById('decryptSection');
     const qrcodeCanvas = document.getElementById('qrcode');
     const qrHelp = document.getElementById('qrHelp');
+    
     const previewImage = document.getElementById('previewImage');
+    const previewVideo = document.getElementById('previewVideo');
+    const previewAudio = document.getElementById('previewAudio');
+    const previewPdf = document.getElementById('previewPdf');
+    
     const downloadBtn = document.getElementById('downloadBtn');
     const fileInfo = document.getElementById('fileInfo');
 
@@ -87,9 +148,16 @@
     const qrActions = document.getElementById('qrActions');
     const shareLinkBtn = document.getElementById('shareLinkBtn');
     const downloadQrBtn = document.getElementById('downloadQrBtn');
+    const themeToggle = document.getElementById('themeToggle');
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
     let currentShareableUrl = "";
+
+    // GESTION DU THÈME
+    themeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('dark-theme');
+        themeToggle.innerText = document.body.classList.contains('dark-theme') ? '☀️' : '🌙';
+    });
 
     function showProgress(percent) {
         progressContainer.style.display = 'block';
@@ -104,61 +172,110 @@
         progressBar.style.width = '0%';
     }
 
-    function compressCanvasImage(img, fileName, callback) {
-        const canvas = document.createElement('canvas');
-        let max = 800;
-        let w = img.width, h = img.height;
-        if (w > h) { if (w > max) { h *= max / w; w = max; } }
-        else { if (h > max) { w *= max / h; h = max; } }
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
-        canvas.toBlob((blob) => {
-            const newName = fileName.replace(/\.(heic|heif)$/i, '.jpg');
-            callback(blob, newName);
-        }, 'image/jpeg', 0.7);
-    }
+    // TRAITEMENT MULTI-FICHIERS ET CONVERSION
+    async function processFiles(files) {
+        let totalSize = 0;
+        for (let f of files) totalSize += f.size;
 
-    async function processFile(file, callback) {
-        const isHeic = file.name.match(/\.(heic|heif)$/i);
-        const isStandardImage = file.type.startsWith('image/') || isHeic;
-
-        if (isStandardImage) {
-            statusDiv.innerText = isHeic ? "Conversion du format HEIC..." : "Optimisation de l'image...";
-            
-            let blobToProcess = file;
-
-            if (isHeic) {
-                try {
-                    const convertedBlob = await heic2any({
-                        blob: file,
-                        toType: "image/jpeg",
-                        quality: 0.8
-                    });
-                    blobToProcess = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-                } catch (err) {
-                    console.error("Erreur conversion HEIC:", err);
-                    callback(file, file.name);
-                    return;
-                }
-            }
-
-            const reader = new FileReader();
-            reader.readAsDataURL(blobToProcess);
-            reader.onload = (e) => {
-                const img = new Image();
-                img.src = e.target.result;
-                img.onload = () => {
-                    compressCanvasImage(img, file.name, callback);
-                };
-            };
-        } else {
-            callback(file, file.name);
+        if (totalSize > 1073741824) { // 1 Go
+            alert("Erreur : La taille totale dépasse la limite maximale de 1 Go.");
+            return;
         }
+
+        let finalBlob, finalName;
+
+        if (files.length > 1) {
+            statusDiv.innerText = "Création de l'archive ZIP...";
+            const zip = new JSZip();
+            for (let f of files) {
+                zip.file(f.name, f);
+            }
+            finalBlob = await zip.generateAsync({ type: "blob" });
+            finalName = "archive_partage.zip";
+        } else {
+            let file = files[0];
+            const isHeic = file.name.match(/\.(heic|heif)$/i);
+            
+            if (isHeic) {
+                statusDiv.innerText = "Conversion du format HEIC...";
+                try {
+                    const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
+                    finalBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+                    finalName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+                } catch (e) {
+                    finalBlob = file; finalName = file.name;
+                }
+            } else {
+                finalBlob = file;
+                finalName = file.name;
+            }
+        }
+
+        // CHIFFREMENT ÉVENTUEL
+        const password = encryptPassword.value.trim();
+        let isEncrypted = false;
+
+        if (password) {
+            statusDiv.innerText = "Chiffrement du fichier...";
+            const arrayBuffer = await finalBlob.arrayBuffer();
+            const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer);
+            const encrypted = CryptoJS.AES.encrypt(wordArray, password).toString();
+            finalBlob = new Blob([encrypted], { type: 'text/plain' });
+            isEncrypted = true;
+        }
+
+        uploadFile(finalBlob, finalName, isEncrypted);
     }
 
+    // ENVOI SERVEUR
+    function uploadFile(blob, fileName, isEncrypted) {
+        statusDiv.innerText = "Envoi du fichier en cours...";
+        showProgress(0);
+
+        const formData = new FormData();
+        formData.append('reqtype', 'fileupload');
+        formData.append('time', '1h');
+        formData.append('fileToUpload', blob, fileName);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', 'https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), true);
+
+        xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+                showProgress((event.loaded / event.total) * 100);
+            }
+        };
+
+        xhr.onload = () => {
+            hideProgress();
+            if (xhr.status === 200) {
+                const fileUrl = xhr.responseText.trim();
+                if (fileUrl && fileUrl.startsWith('http')) {
+                    currentShareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}&enc=${isEncrypted ? '1' : '0'}`;
+                    
+                    qr.value = currentShareableUrl;
+                    qrcodeCanvas.style.display = 'inline-block';
+                    qrHelp.style.display = 'block';
+                    qrActions.style.display = 'block';
+                    statusDiv.innerHTML = "QR Code prêt ! Scanne-le ou partage-le.<br><br>Le Qr code est valide pendant 1 heure !!!";
+                } else {
+                    statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
+                }
+            } else {
+                statusDiv.innerText = "Erreur lors du transfert.";
+            }
+        };
+
+        xhr.onerror = () => {
+            hideProgress();
+            statusDiv.innerText = "Erreur de connexion.";
+        };
+
+        xhr.send(formData);
+    }
+
+    // MODE RÉCEPTEUR
     if (fileUrlParam) {
-        // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
         statusDiv.innerText = "Fichier prêt au téléchargement, attention la page est valide pendant 1 heure.";
@@ -166,9 +283,19 @@
 
         const rawUrl = decodeURIComponent(fileUrlParam);
 
-        if (fileNameParam.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-            previewImage.src = rawUrl;
-            previewImage.style.display = 'block';
+        if (isEncryptedParam) {
+            decryptSection.style.display = 'block';
+        } else {
+            // Aperçus directs pour fichiers non chiffrés
+            if (fileNameParam.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                previewImage.src = rawUrl; previewImage.style.display = 'block';
+            } else if (fileNameParam.match(/\.(mp4|webm|ogg)$/i)) {
+                previewVideo.src = rawUrl; previewVideo.style.display = 'block';
+            } else if (fileNameParam.match(/\.(mp3|wav|ogg)$/i)) {
+                previewAudio.src = rawUrl; previewAudio.style.display = 'block';
+            } else if (fileNameParam.match(/\.pdf$/i)) {
+                previewPdf.src = rawUrl; previewPdf.style.display = 'block';
+            }
         }
 
         downloadBtn.style.display = 'inline-block';
@@ -180,114 +307,97 @@
 
             const xhr = new XMLHttpRequest();
             xhr.open('GET', rawUrl, true);
-            xhr.responseType = 'blob';
+            if (isEncryptedParam) xhr.responseType = 'text';
+            else xhr.responseType = 'blob';
 
-            xhr.onprogress = (event) => {
-                if (event.lengthComputable) {
-                    const percentComplete = (event.loaded / event.total) * 100;
-                    showProgress(percentComplete);
-                }
+            xhr.onprogress = (e) => {
+                if (e.lengthComputable) showProgress((e.loaded / e.total) * 100);
             };
 
             xhr.onload = () => {
+                hideProgress();
                 if (xhr.status === 200) {
-                    const blob = xhr.response;
-                    const blobUrl = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = blobUrl;
-                    a.download = fileNameParam;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(blobUrl);
-
-                    hideProgress();
-                    statusDiv.innerText = "Téléchargement terminé !";
-                    downloadBtn.style.display = 'inline-block';
+                    if (isEncryptedParam) {
+                        const pass = decryptPassword.value.trim();
+                        if (!pass) {
+                            alert("Veuillez saisir le mot de passe.");
+                            downloadBtn.style.display = 'inline-block';
+                            return;
+                        }
+                        try {
+                            const decrypted = CryptoJS.AES.decrypt(xhr.responseText, pass);
+                            const typedArray = CryptoJS.enc.Base64.parse(CryptoJS.enc.Base64.stringify(decrypted));
+                            const bytes = new Uint8Array(typedArray.words.length * 4);
+                            for (let i = 0; i < typedArray.words.length; i++) {
+                                bytes[i * 4] = (typedArray.words[i] >> 24) & 0xff;
+                                bytes[i * 4 + 1] = (typedArray.words[i] >> 16) & 0xff;
+                                bytes[i * 4 + 2] = (typedArray.words[i] >> 8) & 0xff;
+                                bytes[i * 4 + 3] = typedArray.words[i] & 0xff;
+                            }
+                            const blob = new Blob([bytes]);
+                            triggerDownload(blob, fileNameParam);
+                        } catch (err) {
+                            alert("Mot de passe incorrect ou fichier corrompu.");
+                            downloadBtn.style.display = 'inline-block';
+                        }
+                    } else {
+                        triggerDownload(xhr.response, fileNameParam);
+                    }
                 } else {
-                    hideProgress();
-                    window.open(rawUrl, '_blank');
-                    statusDiv.innerText = "Erreur. Ouverture dans un nouvel onglet...";
+                    statusDiv.innerText = "Erreur lors de la récupération.";
                     downloadBtn.style.display = 'inline-block';
                 }
             };
 
             xhr.onerror = () => {
                 hideProgress();
-                window.open(rawUrl, '_blank');
-                statusDiv.innerText = "Erreur réseau. Ouverture directe...";
+                statusDiv.innerText = "Erreur réseau.";
                 downloadBtn.style.display = 'inline-block';
             };
 
             xhr.send();
         });
 
+        function triggerDownload(blob, name) {
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+            statusDiv.innerText = "Téléchargement terminé !";
+            downloadBtn.style.display = 'inline-block';
+        }
+
     } else {
         // MODE ÉMETTEUR
         statusDiv.innerText = "Sélectionne un fichier à partager maximum 1 Gb.";
         senderSection.style.display = 'block';
 
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) processFiles(e.dataTransfer.files);
+        });
+
         fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                statusDiv.innerText = "Préparation du fichier...";
-
-                processFile(file, (processedBlob, fileName) => {
-                    statusDiv.innerText = "Envoi du fichier en cours...";
-                    showProgress(0);
-
-                    const formData = new FormData();
-                    formData.append('reqtype', 'fileupload');
-                    formData.append('time', '1h');
-                    formData.append('fileToUpload', processedBlob, fileName);
-
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('POST', 'https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), true);
-
-                    xhr.upload.onprogress = (event) => {
-                        if (event.lengthComputable) {
-                            const percentComplete = (event.loaded / event.total) * 100;
-                            showProgress(percentComplete);
-                        }
-                    };
-
-                    xhr.onload = () => {
-                        hideProgress();
-                        if (xhr.status === 200) {
-                            const fileUrl = xhr.responseText.trim();
-                            if (fileUrl && fileUrl.startsWith('http')) {
-                                currentShareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}`;
-                                
-                                qr.value = currentShareableUrl;
-                                qrcodeCanvas.style.display = 'inline-block';
-                                qrHelp.style.display = 'block';
-                                qrActions.style.display = 'block';
-                                statusDiv.innerHTML = "QR Code prêt ! Scanne-le ou partage-le.<br><br>Le Qr code est valide pendant 1 heure !!!";
-                            } else {
-                                statusDiv.innerText = "Erreur lors de l'envoi du fichier.";
-                            }
-                        } else {
-                            statusDiv.innerText = "Erreur lors du transfert.";
-                        }
-                    };
-
-                    xhr.onerror = () => {
-                        hideProgress();
-                        statusDiv.innerText = "Erreur de connexion.";
-                    };
-
-                    xhr.send(formData);
-                });
-            }
+            if (e.target.files.length > 0) processFiles(e.target.files);
         });
 
         shareLinkBtn.addEventListener('click', () => {
             if (navigator.share) {
-                navigator.share({
-                    title: 'Partage de fichier',
-                    text: 'Voici le fichier que je te partage :',
-                    url: currentShareableUrl
-                }).catch(() => {});
+                navigator.share({ title: 'Partage de fichier', text: 'Voici le fichier que je te partage :', url: currentShareableUrl }).catch(() => {});
             } else {
                 navigator.clipboard.writeText(currentShareableUrl);
                 alert("Lien copié dans le presse-papier !");
