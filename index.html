@@ -49,8 +49,10 @@
         
         #fileInfo { margin-top: 15px; font-weight: bold; color: var(--text-color); word-break: break-all; }
         .size-badge { font-size: 12px; color: var(--subtext-color); margin-top: 5px; font-weight: normal; }
-        .expiry-badge { display: inline-block; background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-top: 8px; font-weight: bold; }
+        .expiry-badge { display: inline-block; background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 6px 12px; border-radius: 6px; font-size: 13px; margin-top: 10px; font-weight: bold; }
+        .expiry-badge.expired { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
         body.dark-theme .expiry-badge { background: #332b00; color: #ffda6a; border-color: #665200; }
+        body.dark-theme .expiry-badge.expired { background: #3a1012; color: #ff858d; border-color: #661d21; }
         
         input[type="file"] { display: none; }
         
@@ -119,7 +121,7 @@
     <!-- Section Récepteur -->
     <div id="receiverSection" style="display:none;">
         <div id="fileInfo"></div>
-        <div id="expiryBadge" class="expiry-badge" style="display:none;">⏱️ Lien temporaire Litterbox</div>
+        <div id="expiryBadge" class="expiry-badge" style="display:none;">⏱️ Calcul du temps restant...</div>
         
         <!-- Aperçus selon format -->
         <img id="previewImage" alt="Aperçu" style="display:none;">
@@ -143,6 +145,7 @@
     const fileUrlParam = urlParams.get('url');
     const fileNameParam = urlParams.get('name') || "fichier_recu";
     const isEncryptedParam = urlParams.get('enc') === '1';
+    const expParam = urlParams.get('exp');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -191,6 +194,16 @@
         const sizes = ['Octets', 'Ko', 'Mo', 'Go'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function getTimeInMs(timeVal) {
+        switch(timeVal) {
+            case '1h': return 1 * 60 * 60 * 1000;
+            case '12h': return 12 * 60 * 60 * 1000;
+            case '24h': return 24 * 60 * 60 * 1000;
+            case '72h': return 72 * 60 * 60 * 1000;
+            default: return 72 * 60 * 60 * 1000;
+        }
     }
 
     themeToggle.addEventListener('click', () => {
@@ -301,6 +314,7 @@
 
         const selectedTime = timeSelect.value;
         const selectedTimeText = timeSelect.options[timeSelect.selectedIndex].text;
+        const expiryTimestamp = Date.now() + getTimeInMs(selectedTime);
 
         const formData = new FormData();
         formData.append('reqtype', 'fileupload');
@@ -323,7 +337,7 @@
             if (xhr.status === 200) {
                 const fileUrl = xhr.responseText.trim();
                 if (fileUrl && fileUrl.startsWith('http')) {
-                    currentShareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}&enc=${isEncrypted ? '1' : '0'}`;
+                    currentShareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(fileName)}&enc=${isEncrypted ? '1' : '0'}&exp=${expiryTimestamp}`;
                     
                     fileUploaded = true;
                     qr.value = currentShareableUrl;
@@ -354,7 +368,37 @@
         receiverSection.style.display = 'block';
         statusDiv.innerText = "Fichier prêt au visionnage / téléchargement.";
         fileInfo.innerText = "Fichier : " + fileNameParam;
-        expiryBadge.style.display = 'inline-block';
+
+        if (expParam) {
+            expiryBadge.style.display = 'inline-block';
+            const expTime = parseInt(expParam, 10);
+
+            function updateCountdown() {
+                const now = Date.now();
+                const diff = expTime - now;
+
+                if (diff <= 0) {
+                    expiryBadge.innerText = "⚠️ Ce lien a expiré !";
+                    expiryBadge.classList.add('expired');
+                    return;
+                }
+
+                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+                let text = "⏱️ Expire dans : ";
+                if (days > 0) text += `${days}j `;
+                if (hours > 0 || days > 0) text += `${hours}h `;
+                text += `${minutes}m ${seconds}s`;
+
+                expiryBadge.innerText = text;
+            }
+
+            updateCountdown();
+            setInterval(updateCountdown, 1000);
+        }
 
         const rawUrl = decodeURIComponent(fileUrlParam);
 
