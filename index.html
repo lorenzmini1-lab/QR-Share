@@ -40,7 +40,7 @@
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const photoIdParam = urlParams.get('id');
+    const imgUrlParam = urlParams.get('url');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -53,9 +53,6 @@
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
 
-    // Endpoint d'API libre pour l'échange de clés temporaires
-    const API_URL = "https://file-relay.vercel.app/api";
-
     function compressImage(file, callback) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -64,40 +61,41 @@
             img.src = e.target.result;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let max = 800; // Très bonne qualité
+                let max = 800;
                 let w = img.width, h = img.height;
                 if (w > h) { if (w > max) { h *= max / w; w = max; } }
                 else { if (h > max) { w *= max / h; h = max; } }
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                callback(canvas.toDataURL('image/jpeg', 0.6));
+                canvas.toBlob((blob) => {
+                    callback(blob);
+                }, 'image/jpeg', 0.7);
             };
         };
     }
 
-    if (photoIdParam) {
+    if (imgUrlParam) {
         // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
         statusDiv.innerText = "Récupération de la photo...";
 
-        fetch(`https://tmpfiles.org/api/v1/dl/${photoIdParam}`)
-        .then(res => {
-            if (!res.ok) throw new Error();
-            return res.blob();
-        })
-        .then(blob => {
-            const imgUrl = URL.createObjectURL(blob);
-            receivedImage.src = imgUrl;
-            receivedImage.style.display = 'block';
-            downloadBtn.href = imgUrl;
-            downloadBtn.style.display = 'inline-block';
+        const rawUrl = decodeURIComponent(imgUrlParam);
+
+        receivedImage.onload = () => {
             statusDiv.innerText = "Photo reçue avec succès !";
-        })
-        .catch(() => {
-            statusDiv.innerText = "Erreur de chargement ou lien expiré.";
-        });
+            downloadBtn.style.display = 'inline-block';
+        };
+
+        receivedImage.onerror = () => {
+            statusDiv.innerText = "Erreur de chargement de l'image.";
+        };
+
+        receivedImage.src = rawUrl;
+        receivedImage.style.display = 'block';
+        downloadBtn.href = rawUrl;
+        downloadBtn.target = "_blank";
 
     } else {
         // MODE ÉMETTEUR
@@ -109,35 +107,30 @@
             if (file) {
                 statusDiv.innerText = "Optimisation de la photo...";
 
-                compressImage(file, (base64Data) => {
+                compressImage(file, (compressedBlob) => {
                     statusDiv.innerText = "Envoi de la photo (5G/Wi-Fi)...";
 
-                    fetch(base64Data)
-                    .then(res => res.blob())
-                    .then(blob => {
-                        const formData = new FormData();
-                        formData.append('file', blob, 'photo.jpg');
+                    const formData = new FormData();
+                    formData.append('reqtype', 'fileupload');
+                    formData.append('time', '1h');
+                    formData.append('fileToUpload', compressedBlob, 'photo.jpg');
 
-                        return fetch('https://tmpfiles.org/api/v1/upload', {
-                            method: 'POST',
-                            body: formData
-                        });
+                    // Proxy CORS vers Litterbox (Catbox)
+                    fetch('https://corsproxy.io/?' + encodeURIComponent('https://litterbox.catbox.moe/resources/internals/api.php'), {
+                        method: 'POST',
+                        body: formData
                     })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data && data.data && data.data.url) {
-                            // Extrait l'identifiant unique du fichier
-                            const rawUrl = data.data.url;
-                            const fileId = rawUrl.split('tmpfiles.org/')[1];
-                            
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?id=${fileId}`;
+                    .then(res => res.text())
+                    .then(fileUrl => {
+                        if (fileUrl && fileUrl.startsWith('http')) {
+                            const shareableUrl = `${window.location.origin}${window.location.pathname}?url=${encodeURIComponent(fileUrl.trim())}`;
                             
                             qr.value = shareableUrl;
                             qrcodeCanvas.style.display = 'inline-block';
                             qrHelp.style.display = 'block';
                             statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
                         } else {
-                            statusDiv.innerText = "Erreur lors du transfert de la photo.";
+                            statusDiv.innerText = "Erreur lors de l'envoi de la photo.";
                         }
                     })
                     .catch(() => {
