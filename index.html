@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Partage Photo 4G & Wi-Fi</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; text-align: center; }
+        .card { background: white; padding: 20px; border-radius: 12px; max-width: 400px; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .btn { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px; text-decoration: none; display: inline-block; }
+        .btn-success { background: #28a745; }
+        #status { font-weight: bold; margin: 15px 0; color: #555; }
+        img { max-width: 100%; border-radius: 8px; margin-top: 15px; }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Partage Photo Universal (4G / Wi-Fi)</h2>
+    <div id="status">Chargement...</div>
+
+    <!-- Section Émetteur -->
+    <div id="senderSection" style="display:none;">
+        <label for="photoInput" class="btn">Sélectionner une photo</label>
+        <input type="file" id="photoInput" accept="image/*">
+        <br>
+        <canvas id="qrcode" style="display:none; margin-top:15px;"></canvas>
+        <p id="qrHelp" style="display:none; font-size:12px; color:#666;">Scanne ce QR code avec n'importe quel téléphone (4G ou Wi-Fi).</p>
+    </div>
+
+    <!-- Section Récepteur -->
+    <div id="receiverSection" style="display:none;">
+        <p>Récupération de la photo en cours...</p>
+        <img id="receivedImage" alt="" style="display:none;">
+        <br>
+        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
+    </div>
+</div>
+
+<script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const imgUrlParam = urlParams.get('img');
+
+    const statusDiv = document.getElementById('status');
+    const senderSection = document.getElementById('senderSection');
+    const receiverSection = document.getElementById('receiverSection');
+    const photoInput = document.getElementById('photoInput');
+    const qrcodeCanvas = document.getElementById('qrcode');
+    const qrHelp = document.getElementById('qrHelp');
+    const receivedImage = document.getElementById('receivedImage');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
+
+    function compressImage(file, callback) {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (e) => {
+            const img = new Image();
+            img.src = e.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let max = 1000;
+                let w = img.width, h = img.height;
+                if (w > h) { if (w > max) { h *= max / w; w = max; } }
+                else { if (h > max) { w *= max / h; h = max; } }
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                canvas.toBlob((blob) => {
+                    callback(blob);
+                }, 'image/jpeg', 0.7);
+            };
+        };
+    }
+
+    if (imgUrlParam) {
+        // MODE RÉCEPTEUR
+        senderSection.style.display = 'none';
+        receiverSection.style.display = 'block';
+        statusDiv.innerText = "Chargement de la photo...";
+
+        const finalUrl = decodeURIComponent(imgUrlParam);
+        receivedImage.src = finalUrl;
+        receivedImage.style.display = 'inline-block';
+        downloadBtn.href = finalUrl;
+        downloadBtn.style.display = 'inline-block';
+        statusDiv.innerText = "Photo reçue avec succès !";
+
+    } else {
+        // MODE ÉMETTEUR
+        statusDiv.innerText = "Sélectionne une photo à partager.";
+        senderSection.style.display = 'block';
+
+        photoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                statusDiv.innerText = "Optimisation de la photo...";
+
+                compressImage(file, (compressedBlob) => {
+                    statusDiv.innerText = "Génération du lien de partage...";
+
+                    const formData = new FormData();
+                    formData.append('file', compressedBlob);
+                    formData.append('upload_preset', 'docs_upload_example_us_preset'); // Preset public Cloudinary
+
+                    fetch('https://api.cloudinary.com/v1_1/demo/image/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.secure_url) {
+                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(data.secure_url)}`;
+                            qr.value = shareableUrl;
+                            qrcodeCanvas.style.display = 'inline-block';
+                            qrHelp.style.display = 'block';
+                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
+                        } else {
+                            statusDiv.innerText = "Erreur lors de la préparation de l'image.";
+                        }
+                    })
+                    .catch(() => {
+                        statusDiv.innerText = "Erreur de connexion réseau.";
+                    });
+                });
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
