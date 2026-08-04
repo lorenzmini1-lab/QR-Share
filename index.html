@@ -34,13 +34,13 @@
     <div id="receiverSection" style="display:none;">
         <img id="receivedImage" alt="Photo transmise" style="display:none;">
         <br>
-        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg" target="_blank">Télécharger la photo</a>
+        <a id="downloadBtn" class="btn btn-success" style="display:none;" download="photo_recue.jpg">Télécharger la photo</a>
     </div>
 </div>
 
 <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const imgUrlParam = urlParams.get('img');
+    const photoIdParam = urlParams.get('id');
 
     const statusDiv = document.getElementById('status');
     const senderSection = document.getElementById('senderSection');
@@ -52,6 +52,7 @@
     const downloadBtn = document.getElementById('downloadBtn');
 
     const qr = new QRious({ element: qrcodeCanvas, size: 250, level: 'M' });
+    const FIREBASE_URL = "https://kv-store-public-default-rtdb.europe-west1.firebasedatabase.app/photos";
 
     function compressImage(file, callback) {
         const reader = new FileReader();
@@ -61,39 +62,40 @@
             img.src = e.target.result;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let max = 800;
+                let max = 600;
                 let w = img.width, h = img.height;
                 if (w > h) { if (w > max) { h *= max / w; w = max; } }
                 else { if (h > max) { w *= max / h; h = max; } }
                 canvas.width = w; canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                callback(dataUrl.split(',')[1]);
+                callback(canvas.toDataURL('image/jpeg', 0.5));
             };
         };
     }
 
-    if (imgUrlParam) {
+    if (photoIdParam) {
         // MODE RÉCEPTEUR
         senderSection.style.display = 'none';
         receiverSection.style.display = 'block';
-        statusDiv.innerText = "Chargement de la photo...";
+        statusDiv.innerText = "Récupération de la photo...";
 
-        const finalUrl = decodeURIComponent(imgUrlParam);
-
-        receivedImage.onload = () => {
-            statusDiv.innerText = "Photo reçue avec succès !";
-            downloadBtn.style.display = 'inline-block';
-        };
-
-        receivedImage.onerror = () => {
-            statusDiv.innerText = "Erreur de chargement de l'image.";
-        };
-
-        receivedImage.src = finalUrl;
-        receivedImage.style.display = 'block';
-        downloadBtn.href = finalUrl;
+        fetch(`${FIREBASE_URL}/${photoIdParam}.json`)
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.image) {
+                receivedImage.src = data.image;
+                receivedImage.style.display = 'block';
+                downloadBtn.href = data.image;
+                downloadBtn.style.display = 'inline-block';
+                statusDiv.innerText = "Photo reçue avec succès !";
+            } else {
+                statusDiv.innerText = "Photo introuvable ou expirée.";
+            }
+        })
+        .catch(() => {
+            statusDiv.innerText = "Erreur lors du chargement de la photo.";
+        });
 
     } else {
         // MODE ÉMETTEUR
@@ -103,36 +105,27 @@
         photoInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
-                statusDiv.innerText = "Compression de la photo...";
+                statusDiv.innerText = "Optimisation de la photo...";
 
                 compressImage(file, (base64Data) => {
                     statusDiv.innerText = "Envoi de la photo...";
+                    const uniqueId = Date.now() + "_" + Math.floor(Math.random() * 1000);
 
-                    const formData = new FormData();
-                    formData.append('key', '6d207e02198a847aa98d0a2a901485a5');
-                    formData.append('action', 'upload');
-                    formData.append('source', base64Data);
-
-                    fetch('https://freeimage.host/api/1/upload', {
-                        method: 'POST',
-                        body: formData
+                    fetch(`${FIREBASE_URL}/${uniqueId}.json`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: base64Data })
                     })
                     .then(res => res.json())
-                    .then(data => {
-                        if (data && data.image && data.image.url) {
-                            const imageUrl = data.image.url;
-                            const shareableUrl = `${window.location.origin}${window.location.pathname}?img=${encodeURIComponent(imageUrl)}`;
-                            
-                            qr.value = shareableUrl;
-                            qrcodeCanvas.style.display = 'inline-block';
-                            qrHelp.style.display = 'block';
-                            statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
-                        } else {
-                            statusDiv.innerText = "Erreur lors de l'envoi de la photo.";
-                        }
+                    .then(() => {
+                        const shareableUrl = `${window.location.origin}${window.location.pathname}?id=${uniqueId}`;
+                        qr.value = shareableUrl;
+                        qrcodeCanvas.style.display = 'inline-block';
+                        qrHelp.style.display = 'block';
+                        statusDiv.innerText = "QR Code prêt ! Scanne-le maintenant.";
                     })
                     .catch(() => {
-                        statusDiv.innerText = "Erreur de connexion réseau.";
+                        statusDiv.innerText = "Erreur de connexion lors du transfert.";
                     });
                 });
             }
